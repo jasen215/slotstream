@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="500" viewBox="0 0 960 500" role="img" aria-labelledby="title desc">
-  <title id="title">carloslfu/slotstream GitHub star history</title>
-  <desc id="desc">385 GitHub stars from Aug 28–Sep 21, 2026.</desc>
+  <title id="title">jasen215/slotstream GitHub star history</title>
+  <desc id="desc">0 GitHub stars from Sep 2–Sep 21, 2026.</desc>
   <defs>
     <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#54aeff" stop-opacity="0.30"/>
@@ -10,27 +10,21 @@
   <rect x="0.5" y="0.5" width="959" height="499" rx="12" fill="#ffffff" stroke="#d0d7de"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
     <text x="42" y="49" fill="#1f2328" font-size="22" font-weight="600">GitHub stars over time</text>
-    <text x="42" y="78" fill="#656d76" font-size="14">carloslfu/slotstream · Aug 28–Sep 21, 2026</text>
-    <text x="918" y="50" text-anchor="end" fill="#1f2328" font-size="30" font-weight="600">385</text>
+    <text x="42" y="78" fill="#656d76" font-size="14">jasen215/slotstream · Sep 2–Sep 21, 2026</text>
+    <text x="918" y="50" text-anchor="end" fill="#1f2328" font-size="30" font-weight="600">0</text>
     <text x="918" y="77" text-anchor="end" fill="#656d76" font-size="14">stars</text>
     <line x1="78" y1="432.00" x2="922" y2="432.00" stroke="#d8dee4" stroke-width="1"/>
     <text x="65" y="432.00" text-anchor="end" dominant-baseline="middle" fill="#656d76" font-size="12">0</text>
-    <line x1="78" y1="354.50" x2="922" y2="354.50" stroke="#d8dee4" stroke-width="1"/>
-    <text x="65" y="354.50" text-anchor="end" dominant-baseline="middle" fill="#656d76" font-size="12">100</text>
-    <line x1="78" y1="277.00" x2="922" y2="277.00" stroke="#d8dee4" stroke-width="1"/>
-    <text x="65" y="277.00" text-anchor="end" dominant-baseline="middle" fill="#656d76" font-size="12">200</text>
-    <line x1="78" y1="199.50" x2="922" y2="199.50" stroke="#d8dee4" stroke-width="1"/>
-    <text x="65" y="199.50" text-anchor="end" dominant-baseline="middle" fill="#656d76" font-size="12">300</text>
     <line x1="78" y1="122.00" x2="922" y2="122.00" stroke="#d8dee4" stroke-width="1"/>
-    <text x="65" y="122.00" text-anchor="end" dominant-baseline="middle" fill="#656d76" font-size="12">400</text>
-    <text x="78.00" y="469" text-anchor="middle" fill="#656d76" font-size="12">Aug 28</text>
-    <text x="253.83" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 2</text>
-    <text x="429.67" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 7</text>
-    <text x="570.33" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 11</text>
-    <text x="746.17" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 16</text>
+    <text x="65" y="122.00" text-anchor="end" dominant-baseline="middle" fill="#656d76" font-size="12">1</text>
+    <text x="78.00" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 2</text>
+    <text x="255.68" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 6</text>
+    <text x="433.37" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 10</text>
+    <text x="566.63" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 13</text>
+    <text x="744.32" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 17</text>
     <text x="922.00" y="469" text-anchor="middle" fill="#656d76" font-size="12">Sep 21</text>
-    <path d="M 78.00 432.00 L 113.17 432.00 L 148.33 432.00 L 183.50 430.45 L 218.67 339.77 L 253.83 243.67 L 289.00 218.88 L 324.17 211.12 L 359.33 204.92 L 394.50 203.38 L 429.67 197.95 L 464.83 182.45 L 500.00 174.70 L 535.17 166.17 L 570.33 163.07 L 605.50 161.52 L 640.67 156.88 L 675.83 154.55 L 711.00 151.45 L 746.17 148.35 L 781.33 142.93 L 816.50 140.60 L 851.67 135.95 L 886.83 133.62 L 922.00 133.62 L 922.00 432.00 L 78.00 432.00 Z" fill="url(#area)"/>
-    <path d="M 78.00 432.00 L 113.17 432.00 L 148.33 432.00 L 183.50 430.45 L 218.67 339.77 L 253.83 243.67 L 289.00 218.88 L 324.17 211.12 L 359.33 204.92 L 394.50 203.38 L 429.67 197.95 L 464.83 182.45 L 500.00 174.70 L 535.17 166.17 L 570.33 163.07 L 605.50 161.52 L 640.67 156.88 L 675.83 154.55 L 711.00 151.45 L 746.17 148.35 L 781.33 142.93 L 816.50 140.60 L 851.67 135.95 L 886.83 133.62 L 922.00 133.62" fill="none" stroke="#0969da" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="922.00" cy="133.62" r="5" fill="#ffffff" stroke="#0969da" stroke-width="3"/>
+    <path d="M 78.00 432.00 L 122.42 432.00 L 166.84 432.00 L 211.26 432.00 L 255.68 432.00 L 300.11 432.00 L 344.53 432.00 L 388.95 432.00 L 433.37 432.00 L 477.79 432.00 L 522.21 432.00 L 566.63 432.00 L 611.05 432.00 L 655.47 432.00 L 699.89 432.00 L 744.32 432.00 L 788.74 432.00 L 833.16 432.00 L 877.58 432.00 L 922.00 432.00 L 922.00 432.00 L 78.00 432.00 Z" fill="url(#area)"/>
+    <path d="M 78.00 432.00 L 122.42 432.00 L 166.84 432.00 L 211.26 432.00 L 255.68 432.00 L 300.11 432.00 L 344.53 432.00 L 388.95 432.00 L 433.37 432.00 L 477.79 432.00 L 522.21 432.00 L 566.63 432.00 L 611.05 432.00 L 655.47 432.00 L 699.89 432.00 L 744.32 432.00 L 788.74 432.00 L 833.16 432.00 L 877.58 432.00 L 922.00 432.00" fill="none" stroke="#0969da" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="922.00" cy="432.00" r="5" fill="#ffffff" stroke="#0969da" stroke-width="3"/>
   </g>
 </svg>
