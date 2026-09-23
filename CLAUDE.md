@@ -563,8 +563,9 @@ still quoted in commit history and both are wrong.
   pinned `pipenetwork` revision; `slotstream pull --verify` re-checks all
   hashes in ~14 s and is a verify.sh gate.
 - Parity goldens must be generated under **mlx 0.31.1** (`.venv31`,
-  `Tools/parity_ref.py`) — mlx-swift vendors 0.31.x and 0.32.x kernels differ
-  measurably. Never regenerate goldens under a newer mlx.
+  `Tools/parity_ref.py`). The runtime now pins MLX 0.32.2; kernel-upgrade
+  fidelity and same-backend cache equivalence are separate gates. Preserve the
+  historical reference: never regenerate goldens under a newer mlx.
 - SwiftPM cannot compile Metal shaders with CLT only: the Makefile colocates
   the prebuilt `mlx.metallib` next to the binary. `swift test` is unavailable
   (no XCTest in CLT) — `Tools/verify.sh` is the acceptance suite.
@@ -573,6 +574,10 @@ still quoted in commit history and both are wrong.
   `Tools/check_sevra_mac.sh` and the Xcode build (`Tools/build_sevra_xcode.sh`)
   when `apps/macos` or the engine it builds on changes. The app's real-model
   checks need the weights and stay on a development Mac.
+- Coverage percentages are advisory review feedback. Build, instrumented-test
+  and report-generation failures still block CI; never make the whole coverage
+  job optional. Inspect uncovered safety behavior and retain all correctness
+  gates. See [coverage policy](db/records/decisions/coverage-as-review-feedback.md).
 - The sandbox proxies localhost HTTP clients (curl/urllib): test the server
   with `nc` raw sockets, or the app's Browser pane (which reaches localhost).
 - Launch background servers with `(nohup ... &)` subshells; TaskStop kills

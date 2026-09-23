@@ -311,7 +311,8 @@ the tokens it wrote and how fast, the time to its first token, how much of the
 conversation it read and how much it reused, the context it used, any model
 load it waited for, the share of the model's experts already in memory while
 it wrote, and the memory budget it ran with. Speed depends on that budget, so
-the details always show it. Turn on **Show response details** in the
+the details always show it. With a custom limit, they distinguish that saved
+limit from the smaller budget available for the response. Turn on **Show response details** in the
 conversation options menu or the View menu to add a line under every reply
 with tokens per second, tokens written and time to first token, and to show
 the live writing speed in the status while Sevra writes. To open the full
@@ -436,17 +437,23 @@ other applications. The recommendation inherits the engine’s measured
 operating ceiling; it is not a promise of optimal performance on every Mac.
 
 **Custom limit** means “use up to” the selected budget within the displayed
-supported range. It retains automatic pressure protection. The saved limit
-stays stable when available memory changes. Settings distinguish the app’s
-physical memory use from its estimated current allocation budget. Unified
+supported range, which comes from this Mac's hardware rather than the automatic
+default. It retains automatic pressure protection. Switching to Custom starts
+at the current budget; returning to it restores your last chosen limit. The
+saved limit stays stable when available memory changes. Settings distinguish
+the app’s physical memory use from the budget available now. Unified
 CPU/GPU memory is counted once.
+If a saved limit exceeds the current Mac's supported range, Settings shows
+the saved value and asks you to lower it or choose Automatic.
 
 The model loads with the first request. **Keep model ready → Automatic**
 releases it after inactivity, with a bounded delay informed by observed
 preparation time and power conditions. **While app is open** favors warm
 follow-ups but still yields to memory pressure and sleep. **Release memory
-now** preserves saved conversations and personal memory. It does not create
-a disk cache of private inference state.
+now** preserves saved conversations and personal memory. Ordinary conversations
+can reuse a disposable prompt cache in that Home after a reload. Thinking and
+incognito sessions keep their inference state off disk. Backups exclude the
+prompt cache; it can be rebuilt from the saved conversation.
 
 Budget changes during a response apply after that job finishes. New messages
 wait through the short resource handoff. Closing the window follows the
@@ -499,7 +506,7 @@ create-only document publication and reopening its durable Home. Run it only
 under the repository memory rules, with a new disposable destination:
 
 ```bash
-cp Tools/lib/mlx-0.31.1.metallib apps/macos/.build/release/mlx.metallib
+cp Tools/lib/mlx-0.32.2.metallib apps/macos/.build/release/mlx.metallib
 apps/macos/.build/release/sevra-mac-checks --real \
   --source "$PWD/apps/macos/Fixtures/private-workspace-brief" \
   --home "$PWD/.build/sevra-disposable-real-check"

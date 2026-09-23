@@ -36,10 +36,12 @@ private func eventually(_ predicate: () async -> Bool) async throws {
 }
 func performanceChecks(root: URL, dbmd: URL) async throws {
     var plans = 0, refused = 0
-    for ram in [8.0, 16, 24, 48, 128] {
+    for ram in [8.0, 16, 24, 32, 48, 64, 96, 128] {
         for available in [0.0, 3, 8, 10, 13, 20, 35, 70] where available <= ram {
             let machine = Machine.simulated(ramGB: ram, availableGB: available)
-            for preference in [PerformancePreferences(), .init(budget: .custom, customGB: 10), .init(budget: .custom, customGB: 20)] {
+            for preference in [PerformancePreferences(), .init(budget: .custom, customGB: 10),
+                               .init(budget: .custom, customGB: 20), .init(budget: .custom, customGB: 33),
+                               .init(budget: .custom, customGB: 48), .init(budget: .custom, customGB: 60)] {
                 do {
                     let plan = try PerformancePolicy.plan(preference, on: machine)
                     try verifyPerformance(plan.simulated && plan.source == .auto, "custom is elastic and simulated plans stay simulated")
@@ -55,6 +57,21 @@ func performanceChecks(root: URL, dbmd: URL) async throws {
         }
     }
     try verifyPerformance(plans > 0 && refused > 0, "sweep includes accepted and refused plans")
+    let big = Machine.simulated(ramGB: 64 * 1.073741824, availableGB: 62)
+    let custom = PerformancePreferences(budget: .custom, customGB: 48)
+    let larger = try PerformancePolicy.plan(custom, on: big)
+    try verifyPerformance(larger.targetGB == 48 && larger.memoryLimitGB == 48, "custom can exceed automatic default")
+    try verifyPerformance(larger.slots > PerformancePolicy.plan(.init(), on: big).slots, "larger custom limit buys more cache")
+    let first = PerformancePreferences().selectingBudget(.custom, currentGB: 33, maximumGB: PerformancePolicy.maximumGB(on: big))
+    try verifyPerformance(first.customGB == 33, "first Custom keeps the current budget")
+    let returned = custom.selectingBudget(.automatic, currentGB: 20, maximumGB: 49.5)
+        .selectingBudget(.custom, currentGB: 20, maximumGB: 49.5)
+    try verifyPerformance(returned.customGB == 48, "returning to Custom preserves user's last limit")
+    try verifyPerformance(PerformancePreferences.restore(try JSONEncoder().encode(custom)) == custom, "large limit survives restart")
+    let legacy = PerformancePreferences.restore(Data("{\"budget\":\"automatic\",\"customGB\":10,\"readiness\":\"automatic\"}".utf8))
+    try verifyPerformance(legacy.selectingBudget(.custom, currentGB: 24, maximumGB: 33).customGB == 24, "old unused default adopts current budget")
+    let savedLegacy = PerformancePreferences.restore(Data("{\"budget\":\"custom\",\"customGB\":10,\"readiness\":\"automatic\"}".utf8))
+    try verifyPerformance(savedLegacy.selectingBudget(.custom, currentGB: 24, maximumGB: 33).customGB == 10, "old explicit custom budget retained")
     let machine = Machine.simulated(ramGB: 48, availableGB: 30)
     for invalid in [Double.nan, .infinity, -1, 0, 1, 1000] {
         do { _ = try PerformancePolicy.plan(.init(budget: .custom, customGB: invalid), on: machine); throw SevraError.refused("CHECK FAILED: invalid custom accepted") }
@@ -176,6 +193,10 @@ func realPerformanceCheckIfRequested() async throws -> Bool {
             }
             if let run = snapshot.home.threads[0].run, run.state.terminal {
                 try verifyPerformance(run.state == .completed, "real turn completed: " + run.status)
+                let expectedLimit = nonce == "reloaded" ? 9.0 : 10.0
+                try verifyPerformance(run.metrics?.memoryLimitGB == expectedLimit
+                    && (run.metrics?.budgetGB ?? .infinity) <= expectedLimit,
+                    "response records its active ceiling independently of a pending setting change")
                 if changeDuringResponse { try verifyPerformance(changed, "observed active setting change") }
                 print("REAL_TURN \(nonce) seconds=\(ProcessInfo.processInfo.systemUptime - start) status=\(run.state.rawValue)")
                 fflush(stdout); return

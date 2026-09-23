@@ -535,6 +535,8 @@ public actor SevraRuntime {
                     modelStatus = inference.simulated ? "Simulated engine" : "Local model in use"
                     let response: EngineTurn
                     do {
+                        try await inference.prepareCache(InferenceCacheContext(home: homeURL,
+                            thread: thread, thinking: thinkingRequest != nil))
                         response = try await inference.turn(history: history, tools: definitions, thinking: thinkingRequest, replyTokens: replyTokens, control: control, cancellation: cancellation, buffer: buffer)
                         unrecorded = response.metrics
                         try cancellation.check()

@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 CONFIG=${SEVRA_BUILD_CONFIGURATION:-Release}
 DBMD=${SEVRA_DBMD:-$HOME/.dbmd/bin/dbmd}
 [ -x "$DBMD" ] || { echo "no dbmd at $DBMD: run Tools/dbmd_install.sh" >&2; exit 1; }
-[ -s Tools/lib/mlx-0.31.1.metallib ] || { echo "no Metal library: run Tools/fetch_metallib.sh" >&2; exit 1; }
+[ -s Tools/lib/mlx-0.32.2.metallib ] || { echo "no Metal library: run Tools/fetch_metallib.sh" >&2; exit 1; }
 
 # Xcode keeps its own resolved file beside the project. Seed it from the
 # package's, so the project builds the versions the scripted checks build,

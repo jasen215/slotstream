@@ -3,7 +3,7 @@ type: native-spec
 meta-type: operational
 id: 01m2gb639kg290sh168ce1fd53
 created: 2026-09-14T16:14:44.019337+00:00
-updated: 2026-09-21T06:41:09.049924+00:00
+updated: 2026-09-21T17:07:30.899151+00:00
 summary: Mac native implementation baseline and dependency qualification
 ---
 # Mac implementation baseline
@@ -14,7 +14,7 @@ The current root Swift package, products, model geometry and MLX dependencies ar
 
 Tools/build_sevra_mac.sh produces a development-only app bundle with the pinned dbmd executable and the existing matching Metal library. Ad-hoc signing is not Developer ID trust, notarization, a supported updater, or a public alpha. The local build captures exact source/dependency/helper/resource hashes before and after compilation, refuses changing inputs, bundles dbmd, Metal and licensed fonts, and verifies its ad-hoc signature. A SwiftPM build and plist validation do not establish that the Xcode app target, a clean standard-user install, notarization or updating work. Since September 21, CI builds the Xcode app target in Release and verifies its bundle and ad hoc signature; that establishes the target builds, not that the built app runs. See [[records/design/sevra-spec/implementation-status]].
 
-Initial real functional runs use an explicit 10 GB engine target and existing verified read-only model files. This is a bounded test policy, not the maintained product recommendation. Preserve the engine's one-model process lock. Check reclaimable memory before model launches; do not run model loads in parallel. No disk prefix cache is enabled for Home data or Incognito.
+Initial real functional runs use an explicit 10 GB engine target and existing verified read-only model files. This is a bounded test policy, not the maintained product recommendation. Preserve the engine's one-model process lock. Check reclaimable memory before model launches; do not run model loads in parallel. The qualified development implementation enables a disposable per-Home disk prefix cache for ordinary non-thinking conversations. Incognito and conversations with thinking receipts keep inference state off disk; Home/privacy transitions clear held memory before encoding. Backups exclude the cache. See [[records/measurements/prompt-speed-qualification-2026-09-21]].
 
 The shipping profile, signed dependencies, full acquisition qualification, broad lifecycle/hardware qualification and same-hardware model-value comparison remain required. The adaptive memory implementation below adds scoped development behavior and separate checks. A successful response alone cannot mark these gates passed.
 

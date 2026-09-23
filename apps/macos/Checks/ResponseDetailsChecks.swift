@@ -13,6 +13,7 @@ func responseDetailsChecks(root: URL, dbmd: URL) async throws {
     first.answerTokens = 100; first.answerSeconds = 10; first.thoughtTokens = 50; first.thoughtSeconds = 5
     first.readTokens = 400; first.readSeconds = 2; first.cachedTokens = 3000; first.contextTokens = 3400; first.windowTokens = 32768
     first.firstTokenSeconds = 2.5; first.loadSeconds = 18.2; first.rounds = 1; first.expertHitRate = 0.9; first.budgetGB = 9; first.customBudget = true
+    first.memoryLimitGB = 48
     var second = ResponseMetrics()
     second.answerTokens = 150; second.answerSeconds = 10; second.readTokens = 600; second.readSeconds = 3; second.cachedTokens = 3400
     second.contextTokens = 4100; second.windowTokens = 32768; second.firstTokenSeconds = 1; second.rounds = 1; second.expertHitRate = 0.6
@@ -25,7 +26,20 @@ func responseDetailsChecks(root: URL, dbmd: URL) async throws {
     try require(line == "12.5 tok/s · 250 tokens · 2.5 s to first token · model loaded in 18 s", "the line under a reply: \(line ?? "none")")
     try require(ResponseMetricsFormat.line(ResponseMetrics()) == nil, "no line without numbers")
     let report = ResponseMetricsFormat.report(total, thinking: nil)
-    try require(report.contains("Writing: 250 tokens in 20 s, 12.5 tok/s") && report.contains("Expert cache hits while writing: 75%") && report.contains("Memory budget: 9.0 GB, your limit") && ResponseMetricsFormat.budgetText(20.14, custom: false) == "about 20.1 GB, automatic", "copied details state every number:\n\(report)")
+    try require(report.contains("Writing: 250 tokens in 20 s, 12.5 tok/s") && report.contains("Expert cache hits while writing: 75%") && report.contains("Memory budget: about 9.0 GB, within your 48.0 GB limit") && ResponseMetricsFormat.budgetText(20.14, custom: false) == "about 20.1 GB, automatic", "copied details state every number:\n\(report)")
+    try require(total.memoryLimitGB == 48, "multiple rounds preserve the saved ceiling separately from the current budget")
+    var recovered = second; recovered.budgetGB = 20; recovered.customBudget = true; recovered.memoryLimitGB = 48
+    let afterRecovery = total.adding(recovered)
+    try require(afterRecovery.budgetGB == 20 && afterRecovery.memoryLimitGB == 48, "recovery changes the budget, not the saved ceiling")
+    var automatic = recovered; automatic.customBudget = false; automatic.memoryLimitGB = nil
+    try require(afterRecovery.adding(automatic).memoryLimitGB == nil, "an automatic round cannot inherit a stale custom ceiling")
+    let encodedMetrics = try JSONEncoder().encode(total)
+    let decoded = try JSONDecoder().decode(ResponseMetrics.self, from: encodedMetrics)
+    try require(decoded == total, "saved response ceiling survives restart")
+    var legacyMetrics = try JSONSerialization.jsonObject(with: encodedMetrics) as! [String: Any]
+    legacyMetrics.removeValue(forKey: "memoryLimitGB")
+    let restored = try JSONDecoder().decode(ResponseMetrics.self, from: JSONSerialization.data(withJSONObject: legacyMetrics))
+    try require(restored.memoryLimitGB == nil && !ResponseMetricsFormat.report(restored, thinking: nil).contains("your limit"), "older responses do not invent a saved ceiling")
 
     let closed = ThinkingReceipt(level: "low", budgetTokens: 768, tokens: 40, seconds: 7.6, ending: .closed)
     let merged = closed.merged(with: ThinkingReceipt(level: "low", budgetTokens: 768, tokens: 20, seconds: 4.4, ending: .closed))

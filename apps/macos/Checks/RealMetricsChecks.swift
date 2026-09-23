@@ -49,7 +49,7 @@ func realMetricsCheckIfRequested() async throws -> Bool {
         try require(m.thoughtTokens == (thoughtStats?.decodeTokens ?? 0) && near(m.thoughtSeconds, thoughtStats?.decodeSeconds ?? 0), "\(phase): thought tokens and time are the engine's")
         try require(m.readTokens == stats.reduce(0) { $0 + $1.prefillTokens } && near(m.readSeconds, stats.reduce(0) { $0 + $1.prefillSeconds }), "\(phase): reading is the engine's prefill")
         try require(m.cachedTokens == first.reusedPrefixTokens && m.contextTokens == stats.map(\.promptTokens).max(), "\(phase): cache reuse and context size are the engine's")
-        try require(m.rounds == 1 && m.windowTokens > 0 && m.budgetGB.map { abs($0 - 10) < 0.05 } == true && m.customBudget == true, "\(phase): one round, and the budget shown is the 10 GB limit that was set")
+        try require(m.rounds == 1 && m.windowTokens > 0 && m.budgetGB.map { $0 <= 10 } == true && m.memoryLimitGB == 10 && m.customBudget == true, "\(phase): current budget stays within the separately recorded 10 GB limit")
         try require(m.firstTokenSeconds.map { $0 > 0 && $0 < 600 } == true, "\(phase): first token time is measured")
         let written = stats.reduce(0) { $0 + $1.decodeTokens }
         let weighted = written > 0 ? stats.reduce(0.0) { $0 + $1.expertHitRate * Double($1.decodeTokens) } / Double(written) : nil

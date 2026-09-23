@@ -553,6 +553,14 @@ public final class SlotPool {
     /// global and shared -- hot layers borrow from cold ones).
     public var slotsPerLayer: Double { Double(slots) / Double(cfg.numLayers) }
 
+    /// Piecewise workspace writes evaluate before advancing to another
+    /// buffer, so only the largest piece needs replacement storage.
+    package var largestWorkspacePieceBytes: Int {
+        Self.poolShapes(cfg.numExperts, cfg).map {
+            ContextBytes.product($0.shape.reduce(1) { ContextBytes.product($0, $1) }, $0.dtype.size)
+        }.max() ?? Int.max
+    }
+
     /// Per-piece shapes for a pool of `n` slots (order = ExpertStore.pieces).
     private static func poolShapes(_ n: Int, _ cfg: ModelConfig) -> [(shape: [Int], dtype: DType)] {
         let h = cfg.hiddenSize

@@ -876,7 +876,7 @@ extension Notification.Name {
     static let sevraToggleSidebar = Notification.Name("SevraToggleSidebar")
 }
 
-private struct PerformanceSettings: View {
+struct PerformanceSettings: View {
     @ObservedObject var model: AppModel
     @State private var limitGB = 10.0
     @State private var limitText = "10"
@@ -887,9 +887,15 @@ private struct PerformanceSettings: View {
     private var maximum: Double { max(PerformancePolicy.minimumGB, status?.maximumGB ?? PerformancePolicy.minimumGB) }
     private func gb(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...1))) + " GB" }
     private func updateLimit() {
-        limitGB = min(maximum, max(PerformancePolicy.minimumGB, model.performancePreferences.customGB))
-        limitText = limitGB.formatted(.number.precision(.fractionLength(0...1)))
-        limitError = nil
+        let saved = model.performancePreferences.customGB
+        limitGB = min(maximum, max(PerformancePolicy.minimumGB, saved))
+        // A saved limit can exceed this Mac's range after moving preferences
+        // to another device. Show that actual value and let the person fix it;
+        // displaying a silently clamped number would conceal the refusal.
+        limitText = saved.formatted(.number.precision(.fractionLength(0...1)))
+        limitError = status != nil && model.performancePreferences.budget == .custom
+            && (saved < PerformancePolicy.minimumGB || saved > maximum)
+            ? "Choose between \(gb(PerformancePolicy.minimumGB)) and \(gb(maximum))." : nil
     }
     private func commitLimit() {
         let normalized = limitText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -899,14 +905,14 @@ private struct PerformanceSettings: View {
             limitError = "Choose between \(gb(PerformancePolicy.minimumGB)) and \(gb(maximum))."; return
         }
         limitGB = value; limitError = nil
-        var next = model.performancePreferences; next.customGB = value
+        var next = model.performancePreferences; next.customGB = value; next.hasCustomLimit = true
         if next != model.performancePreferences { model.setPerformance(next) }
     }
     var body: some View {
         Section("Performance") {
             Picker("Memory budget", selection: Binding(get: { model.performancePreferences.budget }, set: { choice in
-                var next = model.performancePreferences; next.budget = choice
-                if choice == .custom { next.customGB = min(maximum, max(PerformancePolicy.minimumGB, next.customGB)) }
+                let next = model.performancePreferences.selectingBudget(choice,
+                    currentGB: status?.budgetGB ?? status?.recommendationGB, maximumGB: maximum)
                 model.setPerformance(next)
             })) {
                 Text("Automatic (Recommended)").tag(PerformancePreferences.Budget.automatic)
@@ -930,9 +936,12 @@ private struct PerformanceSettings: View {
                         Text("GB").foregroundStyle(.secondary)
                     }
                     if let limitError { Text(limitError).foregroundStyle(.red).font(.callout) }
-                    Text("Use up to this amount. Sevra can use less when your Mac needs memory. The supported range is \(gb(PerformancePolicy.minimumGB)) to \(gb(maximum)).")
+                    Text("Use up to this amount. Sevra gives memory back when other apps need it and can use more again when it is available. Your limit stays saved.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("Supported on this Mac: up to \(gb(maximum)).")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
+                .disabled(status == nil || (status?.maximumGB ?? 0) < PerformancePolicy.minimumGB)
             } else {
                 Text("Adjusts to your Mac and other apps, keeping room for everyday work.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -941,6 +950,11 @@ private struct PerformanceSettings: View {
                 LabeledContent("Recommended now", value: "Up to " + gb(recommendation))
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Recommended now").accessibilityValue("Up to " + gb(recommendation))
+            }
+            if let budget = status?.budgetGB {
+                LabeledContent("Budget available now", value: "Up to " + gb(budget)).monospacedDigit()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Budget available now").accessibilityValue("Up to " + gb(budget))
             }
             if status?.pending == true {
                 Label("Applies after the current response", systemImage: "clock")
@@ -967,11 +981,6 @@ private struct PerformanceSettings: View {
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel("App memory").accessibilityValue(gb(used))
                     }
-                    if let budget = status.budgetGB {
-                        LabeledContent("Current budget (estimate)", value: gb(budget)).monospacedDigit()
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel("Current budget (estimate)").accessibilityValue(gb(budget))
-                    }
                     Text("Releasing memory keeps your saved chats and personal memory. The next message reloads the model. A larger cache can improve speed; it doesn’t change the model’s knowledge.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -982,6 +991,8 @@ private struct PerformanceSettings: View {
         }
         .onAppear(perform: updateLimit)
         .onChange(of: model.performancePreferences.customGB) { _, _ in updateLimit() }
+        .onChange(of: model.performancePreferences.budget) { _, _ in updateLimit() }
+        .onChange(of: maximum) { _, _ in if !editingNumber { updateLimit() } }
         .onChange(of: editingNumber) { was, isEditing in if was && !isEditing { commitLimit() } }
     }
 }

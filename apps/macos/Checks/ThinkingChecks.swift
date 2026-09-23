@@ -27,6 +27,8 @@ func thinkingChecks(root: URL, dbmd: URL) async throws {
     let observedPlain = await engine.observedThinking
     try require(observedPlain == [nil], "a thread without the switch sends no thinking request")
     try require(plain.run?.thinking == nil && plain.messages.last?.text == "Quick answer.", "plain run has no receipt")
+    let plainCache = await engine.observedCacheContexts.last
+    try require(plainCache?.directory == home.resolvingSymlinksInPath().appendingPathComponent(".sevra/prefix-cache", isDirectory: true), "ordinary context uses only this Home's disposable cache")
 
     // Sticky switch: the next turn thinks, the receipt is recorded, the trace stays in memory only.
     try await runtime!.setThinking(threadID: thread, enabled: true)
@@ -43,6 +45,13 @@ func thinkingChecks(root: URL, dbmd: URL) async throws {
     }
     try require(sawLive, "a running thought is observable with its text")
     let considered = try await terminal(runtime!, thread)
+    let thoughtCache = await engine.observedCacheContexts.last
+    try require(thoughtCache?.directory == nil, "thinking detaches the persistent tier before encoding")
+    var laterPlain = considered; laterPlain.thinking = false
+    try require(InferenceCacheContext(home: home, thread: laterPlain, thinking: false).directory == nil,
+        "an earlier thought excludes later plain turns from persistence")
+    try require(InferenceCacheContext(home: home.appendingPathComponent("other"), thread: plain, thinking: false).directory != plainCache?.directory,
+        "different Homes have different cache ownership")
     let request = await engine.observedThinking.last ?? nil
     try require(request?.level == ThinkingPolicy.level && request?.budgetTokens == ThinkingPolicy.budgetTokens, "the request carries the app's level and budget")
     guard let receipt = considered.run?.thinking else { throw SevraError.refused("CHECK FAILED: thinking receipt missing") }
@@ -104,6 +113,9 @@ func thinkingChecks(root: URL, dbmd: URL) async throws {
     try await again.setThinking(threadID: privateThread, enabled: true)
     let privateRun = try await again.submit(threadID: privateThread, text: "private", nonce: "private")
     let privateResult = try await terminal(again, privateThread)
+    let privateCache = await incognitoEngine.observedCacheContexts.last
+    try require(privateCache?.directory == nil && privateCache?.privateThread == privateThread,
+        "incognito has a distinct memory scope and no disk tier")
     try require(privateResult.run?.thinking?.ending == .closed, "incognito thinks in memory")
     let whileOpen = await again.snapshot()
     try require(whileOpen.thinkingTraces[privateRun]?.joined().contains(canary) == true, "incognito thought is readable while open")

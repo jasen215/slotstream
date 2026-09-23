@@ -3,7 +3,7 @@ type: native-spec
 meta-type: operational
 id: 01m2gb63bjf3kzznf6ta8jp920
 created: 2026-09-14T16:14:44.082480+00:00
-updated: 2026-09-21T06:41:08.952237+00:00
+updated: 2026-09-21T17:07:30.935279+00:00
 summary: Mac application implementation progress and unpassed release gates
 ---
 # Mac implementation status
@@ -242,7 +242,7 @@ Verification on the development Mac:
 - `Tools/check_sevra_mac.sh` passes with 168 PASS lines in an isolated snapshot of HEAD `40209f8` plus this work. The new checks are the scripted response-details suite, a presentation test that keeps the new lines out of the message and its copies, and the offscreen thinking check's 39 checks over the production views in light and dark appearance.
 - The real-model metrics check (`--real-metrics`), run from the same snapshot at the 10 GB plan, matched the engine's statistics field by field over three turns: a thinking turn that loaded the model, a second thinking turn that reused 256 tokens from earlier in the conversation, and a plain turn after switching thinking off. Replies were written at 5.5 and 6.0 tokens per second. The peak physical footprint was 8.35 GB, and swap did not grow.
 
-Found while verifying: a thinking turn reads its prompt tail and its thought twice. The thought and the answer are two engine requests, and the engine resumes a request only from one of its own prefill pass boundaries, so the answer reads again everything after the prompt's last boundary, and the whole thought. In the real run that second read took 4.8 and 5.4 s, longer than writing one of the answers, and a person sees it as a pause before the first word. The runtime contract and the code comment no longer claim that the answer continues from the held state. Removing the second read is an open engine decision, weighed against [[records/decisions/a-continued-conversation-computes-what-a-cold-one-computes]].
+Found while verifying: a thinking turn reads its prompt tail and its thought twice. The thought and the answer are two engine requests, and the engine resumes a request only from one of its own prefill pass boundaries, so the answer reads again everything after the prompt's last boundary, and the whole thought. In the real run that second read took 4.8 and 5.4 s, longer than writing one of the answers, and a person sees it as a pause before the first word. Those timings describe the previous implementation and remain historical evidence. The qualified September 21 prompt-speed change now continues the live state under one generation gate, while later turns still obey [[records/decisions/a-continued-conversation-computes-what-a-cold-one-computes]]. Real thinking controls and exact response metrics pass; see [[records/measurements/prompt-speed-qualification-2026-09-21]].
 
 Still open:
 

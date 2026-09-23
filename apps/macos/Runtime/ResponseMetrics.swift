@@ -33,9 +33,10 @@ public struct ResponseMetrics: Codable, Sendable, Equatable {
     /// Share of expert lookups while writing that were already in memory,
     /// weighted by the tokens each request wrote.
     public var expertHitRate: Double?
-    /// The process memory budget the engine planned for, and whether a person set it.
+    /// The current process budget, which can be below the person's saved limit.
     public var budgetGB: Double?
     public var customBudget: Bool?
+    public var memoryLimitGB: Double?
     public init() {}
 
     public var answerRate: Double? { Self.rate(answerTokens, answerSeconds) }
@@ -81,6 +82,7 @@ public struct ResponseMetrics: Codable, Sendable, Equatable {
         }
         total.budgetGB = next.budgetGB ?? budgetGB
         total.customBudget = next.customBudget ?? customBudget
+        total.memoryLimitGB = next.customBudget != nil ? next.memoryLimitGB : memoryLimitGB
         return total
     }
 }
@@ -107,9 +109,12 @@ public enum ResponseMetricsFormat {
     }
     public static func count(_ value: Int) -> String { value.formatted(.number.grouping(.automatic)) }
     public static func tokens(_ value: Int) -> String { count(value) + (value == 1 ? " token" : " tokens") }
-    /// "10.0 GB, your limit", or "about 20.1 GB, automatic".
-    public static func budgetText(_ gb: Double, custom: Bool) -> String {
-        custom ? String(format: "%.1f GB, your limit", gb) : String(format: "about %.1f GB, automatic", gb)
+    /// A response's resolved budget and, when recorded, the separate saved ceiling.
+    public static func budgetText(_ gb: Double, custom: Bool, limitGB: Double? = nil) -> String {
+        if custom, let limitGB {
+            return String(format: "about %.1f GB, within your %.1f GB limit", gb, limitGB)
+        }
+        return String(format: "about %.1f GB, %@", gb, custom ? "custom setting" : "automatic")
     }
 
     /// The one line under a reply, for example
@@ -143,7 +148,7 @@ public enum ResponseMetricsFormat {
         if let load = m.loadSeconds { lines.append("Model load: \(seconds(load))") }
         if m.rounds > 1 { lines.append("Model rounds: \(m.rounds)") }
         if let hits = m.expertHitRate { lines.append("Expert cache hits while writing: \(Int((hits * 100).rounded()))%") }
-        if let budget = m.budgetGB { lines.append("Memory budget: " + budgetText(budget, custom: m.customBudget == true)) }
+        if let budget = m.budgetGB { lines.append("Memory budget: " + budgetText(budget, custom: m.customBudget == true, limitGB: m.memoryLimitGB)) }
         return lines.joined(separator: "\n")
     }
 }

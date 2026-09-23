@@ -16,6 +16,7 @@ suite "$OUT/sevra-presentation-checks"
 suite bash Tools/check_sevra_scroll.sh
 suite bash Tools/check_sevra_thinking_ui.sh
 suite bash Tools/check_sevra_apps_ui.sh
+suite bash Tools/check_sevra_memory_ui.sh
 # The runtime finds the helper beside the check binary; name it explicitly.
 suite env SEVRA_EXTRACT="$OUT/sevra-extract" "$OUT/sevra-mac-checks"
 if [ ${#failed[@]} -gt 0 ]; then

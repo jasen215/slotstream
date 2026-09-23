@@ -6,20 +6,35 @@ public struct PerformancePreferences: Codable, Equatable, Sendable {
     public enum Readiness: String, Codable, CaseIterable, Sendable { case automatic, keepReady }
     public var budget: Budget
     public var customGB: Double
+    /// Optional for decoding preferences saved before first-use tracking existed.
+    public var hasCustomLimit: Bool?
     public var readiness: Readiness
     public init(budget: Budget = .automatic, customGB: Double = 10, readiness: Readiness = .automatic) {
         self.budget = budget; self.customGB = customGB; self.readiness = readiness
+        self.hasCustomLimit = budget == .custom || customGB != 10
     }
     public static func restore(_ data: Data?) -> Self {
-        guard let data, let value = try? JSONDecoder().decode(Self.self, from: data),
-              value.customGB.isFinite, value.customGB >= PerformancePolicy.minimumGB,
-              value.customGB <= Planner.usefulCeilingGB else { return .init() }
+        guard let data, var value = try? JSONDecoder().decode(Self.self, from: data),
+              value.customGB.isFinite, value.customGB >= PerformancePolicy.minimumGB else { return .init() }
+        // The old automatic default stored 10 even before Custom was used.
+        if value.hasCustomLimit == nil { value.hasCustomLimit = value.budget == .custom || value.customGB != 10 }
         return value
+    }
+
+    public func selectingBudget(_ choice: Budget, currentGB: Double?, maximumGB: Double) -> Self {
+        var next = self
+        next.budget = choice
+        if choice == .custom {
+            let initial = hasCustomLimit == true ? customGB : (currentGB ?? Planner.usefulCeilingGB)
+            next.customGB = min(maximumGB, max(PerformancePolicy.minimumGB, initial))
+            next.hasCustomLimit = true
+        }
+        return next
     }
 }
 
 /// Product policy for the currently supported text model. It reuses the
-/// engine's measured operating ceiling and preserves its independent CLI.
+/// engine's adaptive ceiling and preserves its independent CLI.
 public enum PerformancePolicy {
     /// The engine's smallest automatic window. At the 10 GB test plan the
     /// planner reports the same 9.0 GB peak as the former 8,192-token window
@@ -29,12 +44,12 @@ public enum PerformancePolicy {
     // Round the engine floor UP to a half GB for an accessible native control.
     public static let minimumGB = ceil(Planner.minMemoryGB * 2) / 2
     public static func maximumGB(on machine: Machine) -> Double {
-        max(0, floor(min(Planner.usefulCeilingGB, machine.workingSetGB - 2,
-                         machine.ramGB - Planner.availabilitySlackGB(ramGB: machine.ramGB)) * 2) / 2)
+        guard machine.ramGB.isFinite, machine.workingSetGB.isFinite else { return 0 }
+        return floor(Planner.maximumMemoryLimitGB(ramGB: machine.ramGB,
+            workingSetGB: machine.workingSetGB) * 2) / 2
     }
     public static func validate(_ preferences: PerformancePreferences, on machine: Machine) throws {
-        guard preferences.customGB.isFinite, preferences.customGB >= minimumGB,
-              preferences.customGB <= Planner.usefulCeilingGB else {
+        guard preferences.customGB.isFinite, preferences.customGB >= minimumGB else {
             throw SevraError.refused("Choose a memory limit within the supported range.")
         }
         if preferences.budget == .custom, preferences.customGB > maximumGB(on: machine) {
@@ -47,11 +62,16 @@ public enum PerformancePolicy {
               machine.ramGB.isFinite, machine.ramGB > 0, machine.workingSetGB.isFinite else {
             throw SevraError.unavailable("Sevra cannot read available memory right now. Try again in a moment.")
         }
-        // A custom ceiling stays auto-sized: the governor retains the same
-        // RAM-share bound, pressure cancellation and shrink/grow policy.
-        let percent = preferences.budget == .custom ? preferences.customGB / machine.ramGB * 100 : nil
-        let plan = try Planner.plan(PlanRequest(maxRAMPercent: percent, mtp: .off, vision: .off,
-                                               maxContextTokens: contextTokens), on: machine)
+        // Preserve the selected ceiling independently of the budget available
+        // now, so pressure recovery does not fall back to the automatic default.
+        let ceiling = preferences.budget == .custom ? preferences.customGB : nil
+        let plan: MemoryPlan
+        do {
+            plan = try Planner.plan(PlanRequest(memoryLimitGB: ceiling, mtp: .off, vision: .off,
+                                                maxContextTokens: contextTokens), on: machine)
+        } catch {
+            throw SevraError.refused("There isn’t enough memory available for this model. Close a large app and try again. Your conversation is preserved.")
+        }
         let limit = preferences.budget == .custom ? preferences.customGB : Planner.usefulCeilingGB
         let feasible = min(limit, machine.workingSetGB - 2,
                            available - Planner.availabilitySlackGB(ramGB: machine.ramGB))
@@ -135,7 +155,7 @@ public final class PerformanceTelemetry: @unchecked Sendable {
         let conserving = conditions.lowPowerModeEnabled || ["serious", "critical"].contains(conditions.thermalState)
         return PerformanceSnapshot(preferences: preferences, pending: pending, state: state,
             loaded: current != nil, busy: busy, usedGB: bytes == 0 ? nil : Double(bytes) / 1e9,
-            budgetGB: plan?.expectedPeakGB, recommendationGB: recommendation?.targetGB,
+            budgetGB: plan?.targetGB, recommendationGB: recommendation?.targetGB,
             maximumGB: PerformancePolicy.maximumGB(on: machine),
             detail: pressure ? "Giving memory back to your Mac." : detail,
             idleMinutes: Int(ceil(PerformancePolicy.idleDelay(preparationSeconds: seconds, conservingPower: conserving) / 60)))

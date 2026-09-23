@@ -28,7 +28,12 @@ import SevraPresentation
         popover = next; shownRunID = runID
         next.show(relativeTo: rect, of: view, preferredEdge: .maxY)
     }
-    func close() { popover?.performClose(nil) }
+    func close() {
+        // Do not leave owner-directed dismissal waiting for an AppKit
+        // animation while the response content is still updating.
+        popover?.animates = false
+        popover?.close()
+    }
     func popoverDidClose(_ notification: Notification) {
         guard (notification.object as? NSPopover) === popover else { return }
         popover = nil; shownRunID = nil
@@ -174,7 +179,7 @@ struct ResponseDetailsView: View {
                     if let load = m.loadSeconds { row("Model load", ResponseMetricsFormat.seconds(load) + ", before this response started") }
                     if m.rounds > 1 { row("Model rounds", "\(m.rounds), with tool results in between") }
                     if let hits = m.expertHitRate { row("Expert cache", "\(Int((hits * 100).rounded()))% already in memory while writing") }
-                    if let budget = m.budgetGB { row("Memory budget", ResponseMetricsFormat.budgetText(budget, custom: m.customBudget == true)) }
+                    if let budget = m.budgetGB { row("Memory budget", ResponseMetricsFormat.budgetText(budget, custom: m.customBudget == true, limitGB: m.memoryLimitGB)) }
                 }
                 if !(run.state.terminal || run.state == .needsYou) {
                     // A job with tools records each model round as it finishes.

@@ -121,6 +121,7 @@ public protocol Inference: Sendable {
     var simulated: Bool { get }
     var performanceTelemetry: PerformanceTelemetry? { get }
     func configure(_ preferences: PerformancePreferences) async throws
+    func prepareCache(_ context: InferenceCacheContext) async throws
     func turn(history: [ChatMessage], tools: [ToolDefinition], cancellation: Cancellation, buffer: TurnBuffer) async throws -> EngineTurn
     /// A turn that may think first. `thinking` is nil for tool turns; `control`
     /// carries Answer now. Engines without thinking answer directly.
@@ -130,6 +131,7 @@ public protocol Inference: Sendable {
     func unload() async
 }
 public extension Inference {
+    func prepareCache(_ context: InferenceCacheContext) async throws {}
     func turn(history: [ChatMessage], tools: [ToolDefinition], thinking: ThinkingRequest?, replyTokens: Int, control: ThinkingControl, cancellation: Cancellation, buffer: TurnBuffer) async throws -> EngineTurn {
         try await turn(history: history, tools: tools, cancellation: cancellation, buffer: buffer)
     }
@@ -169,6 +171,9 @@ public actor LocalInference: Inference {
     private let model: URL
     private var preferences: PerformancePreferences
     private var inTurn = false
+    private var cacheContext: InferenceCacheContext?
+    private var privateWorkingState = false
+    public private(set) var persistentCacheActive = false
     /// The engine's own statistics for each request of the last turn, so a
     /// real check can compare them with what the app recorded.
     public private(set) var lastStats: [GenStats] = []
@@ -178,6 +183,25 @@ public actor LocalInference: Inference {
     /// Explicit bounded configuration for existing callers and real checks.
     public init(model: URL = WeightStore.default.modelDirectory, memoryGB: Double) {
         self.model = model; self.preferences = .init(budget: .custom, customGB: memoryGB)
+    }
+    public func prepareCache(_ context: InferenceCacheContext) async throws {
+        guard !inTurn else { throw SevraError.refused("Cache ownership changes after the current response.") }
+        guard cacheContext != context || (privateWorkingState && context.directory != nil) else { return }
+        // On a privacy/Home transition, clear memory before encoding as well
+        // as detaching disk. A promoted or copied history must not splice a
+        // previous private session's thought ids into a persistable request.
+        engine?.disablePersistentPrefixCache()
+        engine?.dropPrefixCache()
+        privateWorkingState = false
+        cacheContext = context
+        configurePersistentCache()
+    }
+    private func configurePersistentCache() {
+        persistentCacheActive = false
+        guard !privateWorkingState, let engine, let directory = cacheContext?.directory else { return }
+        // Acceleration is optional: an unwritable/full cache must never
+        // prevent a model request. The engine detaches before opening a tier.
+        persistentCacheActive = (try? engine.enablePersistentPrefixCache(.init(directory: directory))) != nil
     }
     public func configure(_ preferences: PerformancePreferences) async throws {
         try PerformancePolicy.validate(preferences, on: .current())
@@ -219,6 +243,7 @@ public actor LocalInference: Inference {
             let plan = try PerformancePolicy.plan(preferences, on: machine)
             buffer.stage("Loading the local model")
             engine = try await Engine(modelDir: model, plan: plan)
+            configurePersistentCache()
             if let engine {
                 governor = MemoryGovernor(engine: engine)
                 governor?.start()
@@ -227,11 +252,17 @@ public actor LocalInference: Inference {
             try cancellation.check()
         }
         guard let engine else { throw SevraError.unavailable("Model is unavailable.") }
+        // Also protect direct LocalInference callers that did not supply a
+        // fresh ownership context before asking for a thought.
+        if requested != nil {
+            if persistentCacheActive { engine.disablePersistentPrefixCache(); engine.dropPrefixCache() }
+            persistentCacheActive = false; privateWorkingState = true
+        }
         performanceTelemetry?.update(state: "In use", detail: "Responding on your Mac.", engine: engine)
         // Time to first token starts here, after any load, which is reported apart.
         let ready = ProcessInfo.processInfo.systemUptime
         var firstToken: Double?
-        var request = try engine.beginRequest(connected: { !cancellation.isCancelled })
+        let request = try engine.beginRequest(connected: { !cancellation.isCancelled })
         // A tool turn thinks too when the person asked for it. The thought
         // runs first, then the same turn may call tools, which is what the
         // template renders. What the thought must not do is take the reply
@@ -262,7 +293,6 @@ public actor LocalInference: Inference {
             }
         }
         var params = SampleParams.greedy; params.maxTokens = replyTokens
-        var promptIds = ids
         var receipt: ThinkingReceipt?
         engine.generator.onPrefillProgressAbsolute = { done, total, _, reused in buffer.stage("Reading context: \(done + reused) of \(total + reused) tokens") }
         defer { engine.generator.onPrefillProgressAbsolute = nil }
@@ -274,15 +304,19 @@ public actor LocalInference: Inference {
                 firstToken = now - ready
             }
         }
+        let answerToken: (Int, String) -> Bool = { _, delta in
+            markPrepared()
+            buffer.countAnswerToken()
+            buffer.stage("Responding")
+            consume(splitter.push(delta)); return !cancellation.isCancelled && !tooLarge
+        }
+        let result: Engine.GenerationResult
         if let thinking {
             // The template opens the thought block itself. The thought ends at the
             // model's close tag, at the budget, or when the person asks for the
             // answer; in the last two cases the documented closure is appended.
-            // The answer is a second request over the prompt, the thought and the
-            // closure. The engine resumes it only from a prefill pass boundary it
-            // holds for those ids and reads the rest again, so the thought is
-            // always read once more, and a prompt shorter than the first boundary
-            // is read twice.
+            // Continue the same turn's active state when the sampler changes.
+            // The engine owns the pending token and both phases under one gate.
             let closeIDs = engine.tokenizer.encode(text: ThinkingPolicy.closeTag, addSpecialTokens: false)
             guard closeIDs.count == 1, let closeID = closeIDs.first else { throw SevraError.unavailable("This model does not expose a single thinking close token.") }
             var thoughtParams = SampleParams.thinking; thoughtParams.seed = thinking.seed; thoughtParams.maxTokens = thinking.budgetTokens
@@ -290,7 +324,7 @@ public actor LocalInference: Inference {
             // The clock starts at the first thought token, after prefill, so the
             // receipt and the live counter measure thinking and nothing else.
             buffer.stage("Thinking")
-            let thought = engine.generate(promptIds: ids, params: thoughtParams, shouldContinue: { !cancellation.isCancelled }, onToken: { tok, delta in
+            let phases = try engine.generatePhased(promptIds: ids, first: thoughtParams, second: params, shouldContinue: { !cancellation.isCancelled }, onFirstToken: { tok, delta in
                 markPrepared()
                 if tok == closeID { closed = true; return false }
                 if let tag = delta.range(of: ThinkingPolicy.closeTag) {
@@ -300,29 +334,25 @@ public actor LocalInference: Inference {
                 buffer.appendThought(delta)
                 if control.answerRequested { answerNow = true; return false }
                 return !cancellation.isCancelled && thoughtTokens < thinking.budgetTokens
-            }, request: request)
-            let ending: ThinkingReceipt.Ending = cancellation.isCancelled ? .stopped : closed ? .closed : answerNow ? .answerNow : .budget
-            buffer.endThinking(ending)
-            try cancellation.check()
-            if let error = thought.stats.runtimeError { throw SevraError.refused(error) }
-            metrics.record(thought.stats, thought: true, first: true)
-            lastStats.append(thought.stats)
-            promptIds += thought.ids
-            let separator = engine.tokenizer.encode(text: "\n\n", addSpecialTokens: false)
-            if closed { promptIds += separator }
-            else { promptIds += engine.tokenizer.encode(text: ThinkingPolicy.closure, addSpecialTokens: false) + [closeID] + separator }
-            receipt = ThinkingReceipt(level: thinking.level, budgetTokens: thinking.budgetTokens, tokens: thoughtTokens, seconds: buffer.thinkingSeconds, ending: ending)
-            // The thought samples so it cannot loop; the answer stays greedy like
-            // every other answer in this app, within the same reply cap.
-            request = try engine.beginRequest(connected: { !cancellation.isCancelled })
-            buffer.stage("Responding")
+            }, onSecondToken: answerToken, request: request, transition: { thought in
+                let ending: ThinkingReceipt.Ending = cancellation.isCancelled ? .stopped : closed ? .closed : answerNow ? .answerNow : .budget
+                buffer.endThinking(ending)
+                try cancellation.check()
+                if let error = thought.stats.runtimeError { throw SevraError.refused(error) }
+                metrics.record(thought.stats, thought: true, first: true)
+                lastStats.append(thought.stats)
+                let separator = engine.tokenizer.encode(text: "\n\n", addSpecialTokens: false)
+                receipt = ThinkingReceipt(level: thinking.level, budgetTokens: thinking.budgetTokens, tokens: thoughtTokens, seconds: buffer.thinkingSeconds, ending: ending)
+                // The thought samples so it cannot loop; the answer stays greedy like
+                // every other answer in this app, within the same reply cap.
+                buffer.stage("Responding")
+                return closed ? separator : engine.tokenizer.encode(text: ThinkingPolicy.closure, addSpecialTokens: false) + [closeID] + separator
+            })
+            result = phases.second
+        } else {
+            result = engine.generate(promptIds: ids, params: params,
+                shouldContinue: { !cancellation.isCancelled && !tooLarge }, onToken: answerToken, request: request)
         }
-        let result = engine.generate(promptIds: promptIds, params: params, shouldContinue: { !cancellation.isCancelled && !tooLarge }, onToken: { _, delta in
-            markPrepared()
-            buffer.countAnswerToken()
-            buffer.stage("Responding")
-            consume(splitter.push(delta)); return !cancellation.isCancelled && !tooLarge
-        }, request: request)
         consume(splitter.flush())
         try cancellation.check()
         if let error = result.stats.runtimeError { throw SevraError.refused(error) }
@@ -331,8 +361,10 @@ public actor LocalInference: Inference {
         lastStats.append(result.stats)
         metrics.firstTokenSeconds = firstToken
         metrics.windowTokens = engine.maxContextTokens
-        // The process budget the plan was sized to, which is the limit a person set.
-        metrics.budgetGB = engine.currentPlan.map { $0.targetGB ?? $0.expectedPeakGB }
+        // The current budget can be lower than the saved ceiling under contention.
+        let memoryPlan = engine.currentPlan
+        metrics.budgetGB = memoryPlan.map { $0.targetGB ?? $0.expectedPeakGB }
+        metrics.memoryLimitGB = memoryPlan?.memoryLimitGB
         metrics.customBudget = preferences.budget == .custom
         var turn = EngineTurn(text: text, calls: calls, finishReason: result.stats.finishReason, metrics: metrics)
         turn.thinking = receipt
@@ -345,6 +377,8 @@ public actor LocalInference: Inference {
         await governor?.stopAndWait(); governor = nil
         autoreleasepool {
             engine?.dropPrefixCache(); engine = nil
+            persistentCacheActive = false
+            privateWorkingState = false
             Engine.releaseUnusedMemory()
         }
         performanceTelemetry?.update(state: "Model not loaded", detail: "Loads when you send a message.")
@@ -361,6 +395,8 @@ public actor ScriptedInference: Inference {
     public private(set) var observedContexts: [[ChatMessage]] = []
     public private(set) var observedThinking: [ThinkingRequest?] = []
     public private(set) var observedReplyTokens: [Int] = []
+    public private(set) var observedCacheContexts: [InferenceCacheContext] = []
+    public func prepareCache(_ context: InferenceCacheContext) async throws { observedCacheContexts.append(context) }
     public private(set) var observedTools: [[String]] = []
     public init(turns: [EngineTurn], delayNanoseconds: UInt64 = 0, thinkingTraces: [String] = []) { self.turns = turns; delay = delayNanoseconds; traces = thinkingTraces }
     public func turn(history: [ChatMessage], tools: [ToolDefinition], cancellation: Cancellation, buffer: TurnBuffer) async throws -> EngineTurn {
