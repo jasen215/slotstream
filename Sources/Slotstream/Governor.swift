@@ -272,6 +272,13 @@ public final class MemoryGovernor: @unchecked Sendable {
     static let shrinkDeadbandGB = 1.0  // shed when desired ≤ current − 1 GB
     static let growDeadbandGB = 2.0    // grow when desired ≥ current + 2 GB
 
+    /// `SLOTSTREAM_GOVERNOR_TRACE=1` prints every elastic poll's decision —
+    /// including the holds that move nothing — and, when a resize is refused
+    /// for memory, the growth guard's own inputs. Both refusal and hold leave
+    /// the resize log with nothing to show; instrumenting `elastic-drill`'s
+    /// missing grow-back on 2026-09-26 is what this is for.
+    static let traceGrowth = ProcessInfo.processInfo.environment["SLOTSTREAM_GOVERNOR_TRACE"] == "1"
+
     public init(engine: Engine) {
         self.engine = engine
         queue.setSpecific(key: queueKey, value: 1)
@@ -410,7 +417,21 @@ public final class MemoryGovernor: @unchecked Sendable {
                 self.engine.prefixCache.drop()
                 MLX.Memory.clearCache()
             }
-            if case let .resize(slots, reason) = GovernorPolicy.decide(i) {
+            let decision = GovernorPolicy.decide(i)
+            if Self.traceGrowth {
+                let label: String
+                switch decision {
+                case .hold: label = "hold"
+                case .resize(let slots, let reason): label = "resize to \(slots) (\(reason))"
+                }
+                let wanted = desiredPlan.map { Geometry.gb($0.slots) }
+                self.log(String(format: "governor trace: %@ — now %d slots (%.1f GB),"
+                    + " planner wants %@ (%.1f GB), available %.1f GB",
+                    label, i.currentSlots, Geometry.gb(i.currentSlots),
+                    desiredPlan.map { String($0.slots) } ?? "none", wanted ?? 0,
+                    i.availableGB))
+            }
+            if case let .resize(slots, reason) = decision {
                 let controls = GovernorPolicy.liveControls(for: slots, inputs: i)
                 self.apply(
                     slots, plan: desiredPlan ?? self.engine.currentPlan, reason: reason,
@@ -443,10 +464,25 @@ public final class MemoryGovernor: @unchecked Sendable {
         let ref = plan ?? engine.currentPlan
         if growing {
             MLX.Memory.clearCache()
-            guard GovernorPolicy.growthFits(footprintBytes: ProcessMemory.residentBytes(),
-                transientBytes: engine.model.pool.growthTransientBytes(to: target),
-                availableGB: Planner.deviceAvailableGB(), targetGB: ref?.targetGB,
-                ramGB: ref?.ramGB ?? Planner.deviceRAMGB()) else { return }
+            let footprint = ProcessMemory.residentBytes()
+            let transient = engine.model.pool.growthTransientBytes(to: target)
+            let available = Planner.deviceAvailableGB()
+            let targetGB = ref?.targetGB
+            let ramGB = ref?.ramGB ?? Planner.deviceRAMGB()
+            let fits = GovernorPolicy.growthFits(footprintBytes: footprint,
+                transientBytes: transient, availableGB: available,
+                targetGB: targetGB, ramGB: ramGB)
+            if Self.traceGrowth {
+                log(String(format: "governor trace: grow %d → %d slots: footprint"
+                    + " %.2f GB + transient %.2f GB vs target %@; transient +"
+                    + " slack %.2f GB vs available %@ → %@",
+                    before, target, Double(footprint) / 1e9, Double(transient) / 1e9,
+                    targetGB.map { String(format: "%.2f GB", $0) } ?? "unknown",
+                    Double(transient) / 1e9 + Planner.availabilitySlackGB(ramGB: ramGB),
+                    available.map { String(format: "%.2f GB", $0) } ?? "unknown",
+                    fits ? "allowed" : "refused"))
+            }
+            guard fits else { return }
         }
         // --max-context is also a hard ceiling on any one retained history.
         // A later governor resize must not undo the cap Serve applied at startup.

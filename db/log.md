@@ -2094,3 +2094,6 @@ Answered item 12 from the 2026-09-26 capture: the in-memory tier does not stop b
 ## [2026-09-26 03:30] update | records/design/measured-operating-policies
 Documented the prefix retention ceiling under the memory ceiling section: purpose (tokens of retained state and the GB they cost), kind (an operating default inside a correctness bound, not a throughput optimum), evidence scope (derived from budget arithmetic, no hit-rate measurement yet), the rule that the elastic path must keep the planner's retention floor and may raise the ceiling back, the tradeoff that only permission to refill is kept while the shed still releases the states, and the revision criterion.
 
+## [2026-09-26 05:19] update | measured-operating-policies
+The elastic drill FAIL on the 34 GB Air is an arena limit: a 1.75 GB round trip is under the 2.0 GB grow dead-band, traced and captured in sources/runs/2026/09/2026-09-26-elastic-drill-arena-trace
+

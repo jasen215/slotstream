@@ -608,6 +608,19 @@ conversation, and left at the share with a note when it cannot
 
 Global macOS paging is diagnostic for ordinary correctness, context-capacity and process-budget acceptance. It cannot attribute system activity to Slotstream. Keep process ceilings, real headroom, OS pressure handling, allocation safeguards and complete numerical/work checks; report paging separately. Performance comparisons retain declared clean-interval rules, and historical frozen results stay unchanged. The controlling decision is [[records/decisions/global-paging-is-diagnostic]].
 
+
+The elastic drill's verdict is also a property of its arena, not only of the
+governor. On the 34 GB Air the 13 GB plan leaves a 4.4 GB pool, so the drill's
+availability seam shrinks 1576 slots to 941 and then asks for 1576 again: 635
+slots, about 1.75 GB, is under `GovernorPolicy.growDeadbandGB` (2.0), and
+`GovernorPolicy.decide` holds at both recovery polls — the band working as
+designed, since growing a cache by 1.75 GB is what it exists to ignore. Its one
+2026-09-21 pass of the same command is attributed to a 48 GB machine, so it is
+no evidence about this one. Read a drill FAIL here as the gate reporting an
+arena too small for its own grow band rather than as a governor regression:
+either size the arena so the round trip crosses that band, or skip the drill
+where it cannot. [[sources/runs/2026/09/2026-09-26-elastic-drill-arena-trace]]
+holds the traced decisions.
 ## Public claim review
 
 Claim-text gates detect stale phrases, not unsupported implications. Review

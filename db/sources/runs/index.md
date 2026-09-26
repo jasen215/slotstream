@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/runs
-updated: 2026-09-26T03:28:30.515318Z
+updated: 2026-09-26T05:19:24.928201Z
 ---
 
 # sources/runs
 
+- [[sources/runs/2026/09/2026-09-26-elastic-drill-arena-trace]] — The elastic drill traced on the 34 GB Air: a 1576-slot arena shrinks to 941 and cannot grow back, because the 1.75 GB round trip is under the 2 GB grow dead-band
 - [[sources/runs/2026/09/2026-09-26-m5-air-live-agent-session]] — A live agent session on the 32 GB Air: three memory refusals, one memory prefix reuse against 24 disk reuses, and the elastic shrink that pinned the in-memory retention ceiling below the conversation
 - [[sources/runs/2026/09/2026-09-24-m5-air-live-agent-session]] — A live 0.2.23 agent session on the 32 GB MacBook Air: two requests refused for memory, one after a 333 s prefill, and the prefix cache answering from disk for 18 of 23 reusable prefixes
 - [[sources/runs/2026/09/2026-09-23-shared-prefix-boundary-upgrade]] — Shared prefix head upgrade: the T1 case that fails without it, and the live session where no shared save reached disk
@@ -506,9 +507,8 @@ updated: 2026-09-26T03:28:30.515318Z
 - [[sources/runs/2026/09/2026-09-06-configurable-context-retained-functional-swap-exclusion]] — Four conversations complete and reuse exact prefixes; capacity excluded by swap activity
 - [[sources/runs/2026/09/2026-09-06-configurable-context-pressure-feasible-recovery-pass]] — Pressure cancellation and feasible admission recovery pass with fixed MTP
 - [[sources/runs/2026/09/2026-09-06-optimization-mtp-fix-and-cache-qualification]] — Optimization MTP cancellation fix and remaining cache qualification — V178–180
-- [[sources/runs/2026/09/2026-09-06-configurable-context-governor-invocation-prerequisite]] — Pressure fixture invocation stopped because its required option was missing
 
 ## More
 
-This folder has 683 files. The 500 most recent are listed above.
+This folder has 684 files. The 500 most recent are listed above.
 Use `dbmd query --type run --in sources` for the complete catalog.
