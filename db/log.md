@@ -2163,3 +2163,6 @@ pre-data revision: step 0 is the mtp-accept --top-k probe (no engine change, no 
 ## [2026-09-26 12:26] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
 step 0 probe and step 1 shape model executed: negative (trees buy 0.044 accepted tokens per extra row against the 0.166 they must), record withdrawn, measurement tree-verification-does-not-pay-2026-09-26
 
+## [2026-09-26 12:26] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
+corrected the disposition: the registered G1 reads a bound, tree-6's 11.4% is a go and tree-4's 5.8% fails; the cost evidence is a prior against step 2, not a gate failure, so status returns to open pending a decision
+

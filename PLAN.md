@@ -6490,10 +6490,17 @@ proof; none of it transfers as a number.
    throughput. The deciding number is what a row buys: each extra verify row costs about a sixth of a
    pass, so a tree pays only above 0.166 accepted tokens per extra row, and these buy about 0.044.
    Measurement: [[records/measurements/tree-verification-does-not-pay-2026-09-26]]; raw output:
-   [[sources/runs/2026/09/2026-09-26-tree-verification-step0-probe]]. Steps 2 through 5 were not
-   executed: with the shape question closed there is no branch-local recurrent verification to build,
-   no ancestry mask to add and nothing to screen, and this record is withdrawn with that reason rather
-   than left open. What is still open is a different question, named in the measurement's last
+   [[sources/runs/2026/09/2026-09-26-tree-verification-step0-probe]]. Steps 2 through 5 have not been started.
+
+   **Disposition, stated against the registered gate rather than around it.** G1 as registered reads a
+   bound and says a bound already 10% above `chain-2` is a go; `tree-6`'s lower bound is 11.4% and
+   `tree-4`'s 5.8%, so by the letter of the gate **`tree-6` is a go for step 2** and `tree-4` simply
+   fails the screen. The cost ladder registered beside it in §5 says the same shape costs about twice a
+   chain pass, which is a ~26% throughput loss on the measured model — a strong prior against spending
+   step 2's build, not a gate failure, and this record does not manufacture one. The call is a decision,
+   not a measurement: build the branch-local recurrent verification for `tree-6` and let step 3 measure
+   expert bytes, or stop here on the cost evidence. Until that call is made the record stays open and
+   steps 2 to 5 stay unstarted. What is still open as a question, named in the measurement's last
    section: a tree at a longer chain depth, one whose rows cost less than about 8 ms, or one whose gain
    comes from sampling rather than greedy acceptance — each needs its own registration. From the recorded per-position linear states
    and the frozen pilot prompts, compute for candidate trees (node budgets 4 and 6, branching from the

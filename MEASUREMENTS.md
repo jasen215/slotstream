@@ -6613,13 +6613,20 @@ tree's gain by an unmeasured amount. The prior art's +17.2% committed tokens per
 contradicted by this: its engine is not this one, and this result is a statement about rows
 costing about a sixth of a pass each here.
 
-**What this closes, and what it does not.** It closes the shape question at the adopted depth
-with the evidence available, which is why order 343's steps 2 through 5 — the branch-local
-recurrent verification, the ancestry mask, the budget work and the native screen — were not
-executed; the plan record is withdrawn with that reason and the tree shape is not built. It
-does not close: a tree at a longer chain depth, where the baseline already pays for more rows
-and the relative row overhead is smaller; a tree whose rows are cheaper than 8 ms each; or the
-sampling case above. Each of those is a different question and needs its own registration.
+**What this says, and what it does not.** By order 343's registered screen, which reads a
+lower bound, `tree-6` clears the +10% token bar and `tree-4` does not, so the cheap evidence
+points one shape at step 2 rather than closing the tree family. What the cost ladder
+registered beside that bar adds is a reason not to spend step 2 without deciding to: a gain
+over cost of 0.559 against the shipped chain's 0.752 is about a 26% throughput loss on this
+model, and the rows that cause it are the same rows step 2 would have to make cheap. No tree
+row has ever run and expert bytes per committed token is unmeasured, so this record is
+evidence for that decision, not the decision. The plan record stays open with steps 2
+through 5 unstarted.
+
+What remains open as a question: a tree at a longer chain depth, where the baseline already
+pays for more rows and the relative row overhead is smaller; a tree whose rows cost less than
+about 8 ms each; or the sampling case above. Each is a different question and needs its own
+registration.
 
 Raw output: [[sources/runs/2026/09/2026-09-26-tree-verification-step0-probe]].
 Pre-registration frozen before the data:
