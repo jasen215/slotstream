@@ -2124,3 +2124,6 @@ prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not
 ## [2026-09-26 08:18] create | sources/references/2026/09/2026-09-26-kv-cache-placement-across-tiers.md
 prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not reproduced here
 
+## [2026-09-26 08:26] update | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
+registration xla4-form-20260926 frozen (sha256 a4960716...); step 1 corrected: the xla3 capture shards are gone, so this protocol captures its own features
+

@@ -6359,9 +6359,12 @@ family is closed and leave only the issue decision, or close both.
    input. Fit three families at equal memory and equal parameter count: (a) the shipped rank-128 ridge
    correction as the reference, (b) a two-linear-map form trained with a ranking-aware loss, (c) the
    ridge correction re-fitted with a ranking-aware objective. Exit: validation top-10 agreement at
-   least 0.05 above 0.7980 and twin coverage at the shipped traffic at least 0.05 above 0.6209 with no
-   more wasted reads, within 64 MiB of FP16 weights, before any native code. No model launch is needed
-   for this step.
+   least 0.05 above the reference's re-derived value (0.7980 under the lost capture) and twin coverage
+   at the shipped traffic at least 0.05 above the reference's (0.6209 under the lost capture) with no
+   more wasted reads, within 64 MiB of FP16 weights, before any native code. The features come from this protocol's own
+   observer-only capture, because the predecessor `xla3-learned-20260915` shards are no longer on
+   disk; one capture therefore runs before the fit (about 56 minutes and 7.9 GB of shards for the
+   pilot's 69 requests), while no training or evaluation step loads the model.
 2. Issue decision, offline. From the same capture, record per issued candidate its confidence feature,
    whether its read was adopted, and whether it arrived before use. Fit a calibrated confidence model
    to decide issue/adopt in place of the fixed margin. Exit: at the shipped read traffic, adopted and
@@ -6397,11 +6400,16 @@ experts that execute, and no arm may change outputs.
 
 ## Registration
 
-This record needs its own pre-registration, written before the step-1 capture, naming the feature
-list, the three families, their hyperparameter search space, the train/validation split and the exact
-gates, in the pattern of `.build/expert-lookahead/xla3-*`. Step 4's contention rule and step 5's
-prompt draw are the ones already registered for the forecast program; reuse them verbatim rather than
-restating them.
+Frozen 2026-09-26T08:30Z, before any capture or fit under it, as
+`.build/expert-lookahead/xla4-form-20260926/preregistration.md` (sha256
+`a4960716476e91e5f8ee3aadd6cd11eb7ebc5b23f98562ae863a07d2dd6cdc02`): protocol `xla4-form-20260926`,
+with the frozen identities, arms R/L2/LR plus the step-2 confidence arm, the declared hyperparameter
+grids, gates G1 to G9 and the append-only reporting rules. It covers steps 1 and 2; steps 3 to 6 need
+their own registration once a candidate exists. Step 4's contention rule and step 5's prompt draw are
+the ones already registered for the forecast program; reuse them verbatim rather than restating them.
+That scratchpad is git-ignored and a predecessor protocol's directory was already lost with its
+`xla3` capture shards, so this record carries the registration's identity and gates: do not treat the
+file as the only copy.
 
 ## Tree verification for the GDN hybrid: accepted tokens per verify pass
 Opened on 2026-09-26 from the closing state of [[records/plan/decode-forecast-taps-2026-09-14]] – decode
