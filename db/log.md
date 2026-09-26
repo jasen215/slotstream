@@ -2133,3 +2133,6 @@ registration amended before capture (--features off), protocol xla4-form-2026092
 ## [2026-09-26 08:57] update | sources/references/2026/09/2026-09-26-pre-attention-expert-prediction.md
 read in full from the v1 source package: precise architectures 1 and 2, the 3.0/1.5/0.5 weighted-BCE tiers, margin 0.1 and lambda 0.3, the loss ablation, and the parameter-budget note (hidden 2048 needs 6.29M/layer against our 384k)
 
+## [2026-09-26 09:01] update | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
+amendment 2 before the fit: arms implemented in Tools/expert_lookahead_ranking.py (sha256 f82ee69f), hidden 128 for parameter parity, and gate G2/G3 recorded as not evaluable from an observer-only capture (needs a residency capture)
+

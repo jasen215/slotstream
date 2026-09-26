@@ -6329,6 +6329,20 @@ using slotstream; they are credibility artifacts and completeness for the milest
 type: plan
 id: 01m3ecpstcm5j7raghq0st14gj
 created: 2026-09-26T08:18:32.908050+00:00
+updated: 2026-09-26T08:30:29.419831+00:00
+summary: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
+date: 2026-09-26
+doc: plan
+kind: queue-item
+level: '2'
+order: '342'
+title: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
+status: open
+---
+---
+type: plan
+id: 01m3ecpstcm5j7raghq0st14gj
+created: 2026-09-26T08:18:32.908050+00:00
 updated: 2026-09-26T08:26:39.349155+00:00
 summary: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
 date: 2026-09-26
@@ -6414,17 +6428,21 @@ experts that execute, and no arm may change outputs.
 
 ## Registration
 
-Frozen 2026-09-26T08:30Z and amended 2026-09-26T08:32Z, both before any capture or fit under
-it, as
+Frozen 2026-09-26T08:30Z and amended 2026-09-26T08:32Z and 09:15Z, all before any fit under it,
+as
 `.build/expert-lookahead/xla4-form-20260926/preregistration.md` (sha256
-`6636f3024d6ef6898f080e48f4a6b2ebb8aac6019c8d2c82d611778a383b95f7`): protocol `xla4-form-20260926`,
+`faf0c98a1e2148b4ea61c3d4482338034425d9eb2a9896b9ade8e88b120a512f`): protocol `xla4-form-20260926`,
 with the frozen identities, arms R/L2/LR plus the step-2 confidence arm, the declared hyperparameter
 grids, gates G1 to G9 and the append-only reporting rules. It covers steps 1 and 2; steps 3 to 6 need
 their own registration once a candidate exists. Step 4's contention rule and step 5's prompt draw are
 the ones already registered for the forecast program; reuse them verbatim rather than restating them.
 That scratchpad is git-ignored and a predecessor protocol's directory was already lost with its
 `xla3` capture shards, so this record carries the registration's identity and gates: do not treat the
-file as the only copy. The amendment corrected the seed command's `--features on` to
+file as the only copy. Amendment 2 names the arms' implementation,
+`Tools/expert_lookahead_ranking.py` (sha256 `f82ee69f`), fixes the intermediate size at 128 for
+parameter parity with the rank-128 correction, and records an execution gap: this protocol's capture
+is observer-only, so gate G2 (twin coverage) and G3 (wasted reads) cannot be evaluated from it and
+wait on a residency capture; step 1's report will carry G1, G4 and G5 and mark G2 and G3 pending. The amendment corrected the seed command's `--features on` to
 `--features off`, which §4 of the registration and the `xla3` precedent both require; the frozen
 protocol file is `.build/expert-lookahead/xla4-form-20260926/protocol.json`.
 
