@@ -2,7 +2,7 @@
 type: measurement
 id: 01m3epv9hr66qvbpcygyqbshk6
 created: 2026-09-26T11:15:45.848419+00:00
-updated: 2026-09-26T11:16:06.540711+00:00
+updated: 2026-09-26T11:24:45.624910+00:00
 summary: Two ranking-aware pre-attention predictor forms, at the shipped lead time and parameter count, score 0.7663 and 0.7672 against the shipped rank-128 ridge correction's re-derived 0.8028
 date: 2026-09-26
 doc: measurements
@@ -23,9 +23,11 @@ expert axis with a ranking-aware loss — scores **0.7663** (a rank-128 linear f
 **0.7672** (two linear layers with SiLU between them) on validation top-10 agreement.
 The shipped rank-128 ridge correction, re-derived from this capture by the frozen tool,
 scores **0.8028**. Both ranking arms lose by about 3.6 points, and the registered gate
-(0.05 above the re-derived reference, so 0.8528) was missed by about 8.6 points. The
-predictor-family question is closed for this setting: the shipped tap and its ridge
-correction stay.
+(0.05 above the re-derived reference, so 0.8528) was missed by about 8.6 points. The same
+ordering holds on the metric that decides the lever: at matched read traffic on this
+capture's 10 GB pool the ridge correction covers +0.0430 more of the decode misses where
+the ranking arms cover +0.0178 and +0.0172. The predictor-family question is closed for
+this setting: the shipped tap and its ridge correction stay.
 
 ## Why this was measured
 
@@ -103,9 +105,23 @@ Validation pooled over targets 2 to 47, 142,968 rows:
   stricter than that form's own 35.25 MiB; the comparison above is the honest one.
 - **G5, one table: met.** Every form above was fitted and scored on the same rows, the
   same folds and the same splits.
-- **G2 and G3: not evaluated.** They need a residency capture and this protocol's
-  capture is observer-only; the registration records that as an execution gap rather than
-  a pass.
+- **G2, twin coverage at matched traffic: failed** by every form, including the shipped
+  reference. At the recorded tap's own 564,959 issued tickets on this capture's 10 GB
+  pool the tap covers 0.3955 of 1,114,258 misses; the ridge rank-128 form reaches 0.4385
+  (+0.0430), the dense ridge 0.4412 (+0.0458), and the two ranking arms 0.4132 (+0.0178)
+  and 0.4127 (+0.0172). The registered bar was 0.05 above the re-derived reference. The
+  ranking arms lose here as well, so the family question is closed on the coverage metric
+  too and not only on agreement.
+- **G3, wasted reads at matched traffic: passed** by every form. The ridge forms waste
+  47,959 and 51,038 fewer tickets than the tap and the ranking arms 19,814 and 19,180
+  fewer, so no form pays for its coverage with more waste.
+- An earlier version of this record said G2 and G3 could not be evaluated because the
+  capture was observer-only. That was wrong: the shards carry 5,321 passes, 248,160
+  demand events and 69 residency snapshots, and `twin` replays them. The error came from
+  reading `capture/requests.jsonl`, the driver's copy of the input request list, instead
+  of the shards. [[sources/runs/2026/09/2026-09-26-xla4-form-capture-and-fits]] records
+  the twin runs, the read-cost model refitted from this capture's own events, and the
+  matched-traffic rule.
 - The re-derivation reproduces the published reference: the frozen tool's rank-128 form
   reads 0.8028 here against the 0.7980 in
   [[records/plan/decode-forecast-taps-2026-09-14]], inside the 0.005 agreement tolerance
@@ -122,6 +138,10 @@ Validation pooled over targets 2 to 47, 142,968 rows:
   information and the parameter count fixed. The paper's predictors produce the ranking
   from the pre-attention activation alone, so this is the paper's objective and form in
   the shipped design, not a replication of the paper's own comparison.
-- Agreement only. No coverage, no wasted reads, no timing, and no claim about what these
-  forms would do to throughput.
+- Agreement and coverage, no timing. The coverage numbers come from the twin's replay of
+  this capture at its 10 GB pool (838 slots); the same correction's coverage gain at the
+  pilot's 20 GB pool was about twice as large (0.5397 to 0.6209), so the pool size moves
+  this metric more than the form does. No form here carries any claim about throughput:
+  every native prefetch screen this project has run was negative, and the twin's
+  projected ratios are idealized model output.
 - The sealed test split was not read, and no default, document or public number changed.

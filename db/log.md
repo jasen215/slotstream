@@ -2148,3 +2148,6 @@ step 1 outcome recorded: negative, ranking-aware forms lose 3.6 points to the sh
 ## [2026-09-26 11:16] update | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
 corrected: the body carried four copies of the record's own frontmatter (FM_IN_BODY) from whole-file body writes; rebuilt the body from the last copy, content unchanged
 
+## [2026-09-26 11:24] update | records/measurements/expert-lookahead-ranking-forms-2026-09-26.md
+G2/G3 evaluated from the twin: the ranking arms lose on coverage too (+0.018 vs the ridge's +0.043 at matched traffic) and every form wastes fewer reads; the earlier observer-only claim is corrected
+

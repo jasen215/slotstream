@@ -6372,9 +6372,13 @@ family is closed and leave only the issue decision, or close both.
    shipped 35.25, and all forms were scored on identical rows and splits. Gate G1 failed, so the
    pre-registered negative rule applies and the shipped tap and its correction stay. The two
    ranking arms stopped early (best epoch 3 to 12) on 12,195 training rows per layer, so the deficit
-   is measured at this data volume, not at the paper's 10M samples. G2 and G3 could not be evaluated:
-   this protocol's capture is observer-only and carries no residency timeline, which the registration
-   records as an execution gap. Evidence:
+   is measured at this data volume, not at the paper's 10M samples. Gate G2 also fails and G3 passes:
+   on the twin's replay of this capture at its 10 GB pool, matched at the recorded tap's 564,959 issued
+   tickets, the ridge correction covers 0.0430 more of the 1,114,258 decode misses where the two
+   ranking arms cover 0.0178 and 0.0172, and every form wastes fewer reads than the tap. An earlier
+   reading of this run called G2 and G3 unevaluable because the capture looked observer-only; that was
+   wrong, the shards carry 5,321 passes, 248,160 demand events and 69 residency snapshots, and the
+   cost model and matched-traffic rule were rebuilt from this capture. Evidence:
    [[records/measurements/expert-lookahead-ranking-forms-2026-09-26]] and
    [[sources/runs/2026/09/2026-09-26-xla4-form-capture-and-fits]].
 2. Issue decision, offline. From the same capture, record per issued candidate its confidence feature,

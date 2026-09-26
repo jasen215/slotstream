@@ -2,7 +2,7 @@
 type: run
 id: 01m3epv0gf6ymw9cwhrvjaq12x
 created: 2026-09-26T11:15:36.591110+00:00
-updated: 2026-09-26T11:16:06.507471+00:00
+updated: 2026-09-26T11:24:45.588977+00:00
 summary: 'Protocol xla4-form-20260926: observer-only feature capture and the three forecast-form fits'
 binary: .build/out/Products/Release/slotstream sha256 f449f0019cc2439a5436885a7c7d14dde033e57f71d7b790f64ef85d323f10b3
 captured_at: 2026-09-26
@@ -35,6 +35,13 @@ Tools/expert_lookahead_learned.py fit    --cache .../cache --out .../fit-ridge
 Tools/expert_lookahead_ranking.py  fit    --cache .../cache --out .../fit-lr  --arm linear    --search
 Tools/expert_lookahead_ranking.py  fit    --cache .../cache --out .../fit-l2  --arm two_layer --search
 Tools/expert_lookahead_ranking.py  compare --fits .../fit-ridge .../fit-lr .../fit-l2 --out .../compare.json
+
+# residency twin, one run per fitted form (the capture carries the demand timeline)
+python3 <cost-model refit from this capture's own demand events>            # /tmp script, see Identity
+Tools/expert_lookahead_learned.py twin --run .../capture --taps-run .../capture \
+  --capture .../capture --fit .../fit-ridge --cost-model .../cost-model.json \
+  --out .../twin-ridge.json --workers 4                                    # then fit-lr, fit-l2
+python3 <matched-traffic interpolation from the three twin reports>          # /tmp script, see Identity
 ```
 
 ## What happened, including the failure
@@ -79,6 +86,11 @@ of the bytes these numbers came from.
 | `fit-lr/fit.json` | `66359698b1e9ac7d` |
 | `fit-l2/fit.json` | `987afcf7f2a09048` |
 | `compare.json` | `609f52e271e7dc43` |
+| `cost-model.json` | `95f6e4522776dcad` |
+| `twin-ridge.json` | `8f42c618b0873fe4` |
+| `twin-lr.json` | `a128fd939e635c89` |
+| `twin-l2.json` | `0f69540b4890e870` |
+| `twin-matched.json` | `e659489a3e76c804` |
 
 ## Results
 
@@ -97,10 +109,53 @@ Both arms selected the grid's most conservative setting (learning rate 1e-4, wei
 decay 0.01) and stopped early, at best epoch 3 to 12 of a 20-epoch cap, on 12,195 rows
 per layer.
 
+## The residency twin
+
+The capture does carry the residency timeline: `validate-data` counts 5,321 passes,
+248,160 demand events, 69 residency snapshots and 239,747 recorded forecasts in the
+shards, so `twin` replays this capture directly (1,036 complete verify passes joined,
+1,114,258 misses over 982.7 s of decode). An earlier reading of this run said the
+capture was observer-only and that G2 and G3 could not be evaluated; that was wrong — it
+came from reading `capture/requests.jsonl`, which is the driver's copy of the input
+request list, instead of the shards' record kinds 5, 7 and 10.
+
+Two inputs the twin wants were rebuilt rather than reused:
+
+- The read-cost model. The 2026-09-11 probe fit is gone with the pilot scratch, so
+  `intercept_ms` and `slope_ms_per_record` were refitted from this capture's own demand
+  events (244,830 events over 5,441,823 records): 0.2038 ms fixed and 0.4394 ms per
+  record, r2 0.526, residual p50 -0.063 ms and p90 1.559 ms, and a leave-one-request-out
+  refit holding the slope at 0.4380. Only the projected ratio uses these numbers;
+  coverage and waste do not.
+- The matched-traffic rule. The frozen twin matches every variant to `xtaps.SHIPPED`,
+  the stride-2 boundary tap at threshold 0.062, and this capture recorded no stride
+  forecasts, so that point is empty and the twin reports every variant as "outside the
+  swept range". The comparison below applies the twin's own rule (`cmd_twin`, lines 340
+  to 343: linear interpolation of a variant's curve at a fixed issued count) with the
+  reference point taken from the recorded attention tap of the same capture at the same
+  0.062 threshold.
+
+Matched at that reference's 564,959 issued tickets, against the tap's 0.3955 coverage and
+124,327 wasted tickets:
+
+| fitted form | coverage | gain | wasted | change | projected ratio |
+| --- | --- | --- | --- | --- | --- |
+| ridge, rank-128 (shipped) | 0.4385 | +0.0430 | 76,368 | -47,959 | 1.280 |
+| ridge, dense | 0.4412 | +0.0458 | 73,289 | -51,038 | 1.282 |
+| LR, ranking objective | 0.4132 | +0.0178 | 104,513 | -19,814 | 1.259 |
+| L2, ranking objective | 0.4127 | +0.0172 | 105,147 | -19,180 | 1.259 |
+| recorded tap (reference) | 0.3955 | — | 124,327 | — | 1.245 |
+
+The projected ratios are the twin's idealized service model and are **not** timing
+evidence; every variant including the reference projects above 1, which no native screen
+in this project ever reproduced. The two ranking forms also write the same trained arm
+into both the `full` and `rank` slots, so their two curve entries coincide.
+
 ## What is not here
 
-- **G2 and G3 are unevaluated.** This capture is observer-only: its rows carry feature
-  shards and no `passes`, `events` or `tap_forecasts`, so `twin` cannot consume it and
-  no coverage or wasted-read number exists. A residency capture was not run.
-- **No timing evidence of any kind**, by the registration's section 9.
+- **No stride forecasts.** `--forecast-strides` was not passed, so the boundary tap that
+  the twin uses as its shipped reference is absent and its built-in matched table is
+  empty; the table above substitutes the recorded attention tap as the reference.
+- **No timing evidence of any kind**, by the registration's section 9. The twin's
+  projected ratios are model output, not measurement.
 - The sealed test split was never read; folds group by request id.
