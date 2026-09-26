@@ -2073,3 +2073,24 @@ Corrected the machine attribution: the field session, the gate runs and the buil
 ## [2026-09-24 12:19] update | sources/runs/2026/09/2026-09-23-shared-prefix-boundary-upgrade
 Corrected the machine link to the 32 GB MacBook Air the capture was produced on; the transcript is unchanged.
 
+## [2026-09-24 16:33] create | sources/runs/2026/09/2026-09-24-m5-air-live-agent-session
+Captured the raw serve.log of the live 0.2.23 agent session on the 32 GB MacBook Air: two requests refused for memory (one after a 333 s prefill) and 18 of 23 reusable prefixes answered from disk. Marked discarded, never deleted — the machine was in use and swapped, so no timing here is a measurement. Provenance checked against the installed build identity, which pins the session to v0.2.23.
+
+## [2026-09-24 16:33] update | records/plan/12-open-questions-answer-at-the-milestone-noted
+Added open questions 11 and 12: whether auto's availability clamp leaves an SSD-streaming engine room for the file cache its expert reads need (answered only by the interleaved A/B in docs/MEASURE-MEMORY-HEADROOM-AB.md; no default moves first), and why the in-memory prefix tier stops serving a large conversation, now instrumented rather than guessed.
+
+## [2026-09-24 16:36] update | records/design/measured-operating-policies
+Documented the availability slack (max(1.5 GB, 5% of RAM)) under the memory ceiling section: it had a purpose in code and a mention in the planner design record, but no declared kind, tradeoff or revision criterion. It is a safety guard, not a performance margin; its revision criterion is the interleaved auto-vs-limited comparison of open question 11.
+
+## [2026-09-24 16:36] update | records/plan/12-open-questions-answer-at-the-milestone-noted
+Added open question 13: the prefill ladder's rate is the acceptance prompt's and ordinary prose is ~30% slower (recorded, and already a qualifier on the prefill-220 claim), but the measured ratio cannot simply be folded into estPrefillTokS — the context window compares estimates as a ratio (a constant cancels), the pass size compares absolute seconds (it reweights prefill against decode) and the prefill wait guard refuses on it. A prose anchor is therefore a policy change needing its own measurement.
+
+## [2026-09-26 03:29] create | sources/runs/2026/09/2026-09-26-m5-air-live-agent-session
+Captured the raw serve.log of the 2026-09-26 live agent session on the same 32 GB Air: three memory refusals, one memory prefix reuse against 24 disk reuses, and the conversation passing the retention ceiling an elastic shrink had just installed. Marked discarded, never deleted — two cold pool sheds and a prefill rate falling from 126 to 20 tok/s inside the session mean no timing here is a measurement. Ran a working-tree build, not a release: the installed 0.2.23 does not print the strings this log carries.
+
+## [2026-09-26 03:30] update | records/plan/12-open-questions-answer-at-the-milestone-noted
+Answered item 12 from the 2026-09-26 capture: the in-memory tier does not stop because a failed request consumed the state (the refusals precede a working memory hit by four minutes and the switch to disk follows a successful request). GovernorPolicy.liveControls took the post-resize prefix ceiling from a pool-only share with no retentionFloor on the ordinary dead-band path, so a 9.3 to 8.2 GB shed cut it from 65,536 to 29,659 tokens below the live conversation, and PrefixCache.setBudgetLimit clamped downward only so regrowth could not raise it. Both fixed and gated by governor-check; item 11 stays open.
+
+## [2026-09-26 03:30] update | records/design/measured-operating-policies
+Documented the prefix retention ceiling under the memory ceiling section: purpose (tokens of retained state and the GB they cost), kind (an operating default inside a correctness bound, not a throughput optimum), evidence scope (derived from budget arithmetic, no hit-rate measurement yet), the rule that the elastic path must keep the planner's retention floor and may raise the ceiling back, the tradeoff that only permission to refill is kept while the shed still releases the states, and the revision criterion.
+

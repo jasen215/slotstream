@@ -196,16 +196,33 @@ public enum GovernorPolicy {
     /// server from the planned 4096-token pass to 2048. A pressure-event target
     /// can be an arbitrary extra shed, so it deliberately uses the conservative
     /// pool-only fallback.
+    ///
+    /// The fallback is conservative for the prefill pass, whose size is a
+    /// throughput decision. It is *not* conservative for the prefix retention
+    /// ceiling: that one carries the floor the planner adopts so one complete
+    /// conversation stays retained (`Plan.prefixCacheTokensFor(retentionFloor:)`),
+    /// and a pool-only share silently revokes it. A shed that lands between two
+    /// plans — the ordinary dead-band path, not just an OS pressure event — then
+    /// pins the in-memory tier below the live conversation: on 2026-09-26 a 9.3 →
+    /// 8.2 GB shed took the ceiling from 65,536 to 29,659 tokens, so every later
+    /// turn of a 40k-token conversation was served from disk with
+    /// `memory offered 0` although memory had already been given back. Ask the
+    /// planner for the ceiling instead; the share remains what a state no plan
+    /// covers leaves us.
     public static func liveControls(
         for targetSlots: Int, inputs i: Inputs
     ) -> (prefillChunk: Int, prefixCacheTokens: Int) {
-        if let p = desiredPlan(i), p.slots == targetSlots {
+        let planned = desiredPlan(i)
+        if let p = planned, p.slots == targetSlots {
             return (p.prefillChunk, p.prefixCacheTokens)
         }
         let gb = Geometry.gb(targetSlots)
+        let prefixDisabled = i.runtimeAllocationPolicy?.prefixCacheEnabled == false
+        let share = prefixDisabled ? 0
+            : Planner.prefixCacheTokensFor(poolBudgetGB: gb, contextCap: i.maxContextTokens)
         return (
             min(Planner.prefillChunkFor(poolBudgetGB: gb, contextCap: i.maxContextTokens), i.runtimeAllocationPolicy?.prefillChunkOverride ?? 4096),
-            i.runtimeAllocationPolicy?.prefixCacheEnabled == false ? 0 : Planner.prefixCacheTokensFor(poolBudgetGB: gb, contextCap: i.maxContextTokens))
+            prefixDisabled ? 0 : max(share, planned?.prefixCacheTokens ?? 0))
     }
 
     public static func decide(_ i: Inputs) -> Decision {

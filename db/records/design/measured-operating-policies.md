@@ -3,7 +3,7 @@ type: design
 meta-type: conclusion
 id: 01m246aw461nyrejaspmzhxkms
 created: 2026-09-09T22:59:04.454986+00:00
-updated: 2026-09-23T11:40:59.435653+00:00
+updated: 2026-09-26T03:28:55.841492+00:00
 summary: Measured operating policies and revision criteria
 date: 2026-09-09
 doc: plan
@@ -50,6 +50,71 @@ The base automatic total-process ceiling remains 33 GB. The clean development-Ma
 The original larger-target sweep evaluated an already-bounded prediction curve. It cannot prove that all larger allocations have no benefit. The existing ceiling is still a defensible default; no allocation change is justified merely by that limitation in the evidence. See [[records/measurements/automatic-memory-default-evidence-scope-2026-09-09]], [[records/decisions/auto-target-is-the-33-gb-knee-not-70-percent-of-ram]] and [[records/claims/auto-memory-target-ceiling-33-gb]].
 
 Keep code comments, CLI help/diagnostics, policy checks, canonical decisions/claims and relevant README/guides aligned. Regenerate PLAN.md, MEASUREMENTS.md and llms-full.txt from their declared sources. Preserve historical source bytes and annotate interpretations through records. This policy documents ongoing engineering responsibility; it does not claim a completed audit of every existing constant or authorize new benchmarks, spending, telemetry or background tuning.
+
+**Availability slack** (`Planner.availabilitySlackGB`, `max(1.5 GB, 5% of RAM)`). The
+one number between the automatic target and the machine: the target is clamped to
+what is reclaimable right now minus this slack, and the clamp prints its own
+explanatory note when it binds.
+
+- **Purpose and units.** GB of RAM held back between our expected peak and what is
+  reclaimable *now*, so that claiming the rest does not leave the machine at zero.
+- **Kind of limit: a safety guard, not a performance margin.** Nothing grows into
+  it and no estimator treats it as target. The adaptive ceiling it belongs to is
+  documented beside the code as "not a measured performance optimum", and explicit
+  knobs (`--memory-gb`, `--pool-gb`, `--experts-per-layer`) are never resized by it.
+- **Evidence and scope: derived, not measured.** It is a bounded share of RAM, not
+  a calibrated reserve; nothing measured what the engine needs left over. It binds
+  only when availability is already low — on a quiet machine the clamp never binds
+  and the plan is deterministic. The clamp demonstrably sizes the plan down when
+  other apps hold memory, which is the behaviour it exists for.
+- **Tradeoff.** Every GB of slack is a GB the expert cache cannot hold, and this
+  engine's throughput depends on reads that the page cache serves from the same
+  memory the slack declines to claim — so on a machine that is *nearly* idle the
+  guard may cost speed to buy nothing. The opposing evidence is that the session
+  that prompted this review logged two governor pressure events and swapped, i.e.
+  the guard was not what starved it.
+- **Revision criterion.** A measured, interleaved comparison of the auto target
+  against an explicitly limited one over the same real turns, in which each arm's
+  own limit — not availability — chose the target. That is open question 11 in
+  [[records/plan/12-open-questions-answer-at-the-milestone-noted]], with its
+  protocol in `docs/MEASURE-MEMORY-HEADROOM-AB.md`; nothing here moves the value
+  before that runs.
+**Prefix retention ceiling** (`Planner.prefixCacheTokensFor`, charged by
+`prefixCacheGB`). The in-memory tier holds a bounded number of conversation states,
+and its ceiling is 10% of the expert-pool budget at 27,648 bytes per token, raised to
+the whole context window by `retentionFloor` when the planner can fit one complete
+conversation, and left at the share with a note when it cannot
+(`Plan.plan(retention:)`).
+
+- **Purpose and units.** Tokens of retained state, and the GB that costs: token
+  bytes plus three fixed recurrent-state heads. A follow-up turn resumes from a
+  boundary checkpoint, so a ceiling below the live conversation costs a disk restore
+  or a full re-read on every turn.
+- **Kind of limit: an operating default inside a correctness bound.**
+  `PrefixCache.store` admits a state only while `t.count <= _maxTokens`, and
+  `reserveForRestore` / `reserveActiveTokens` keep retained plus active states inside
+  it. Nothing about the 10% share is a throughput optimum.
+- **Evidence and scope: derived, not measured.** The share and the floor come from
+  the planner's budget arithmetic; no measurement has yet tied an in-memory hit rate
+  to ceiling size. The live captures are structural only
+  ([[sources/runs/2026/09/2026-09-26-m5-air-live-agent-session]]).
+- **The elastic path must keep the floor.** A resize whose target is not exactly a
+  fresh planner result — the ordinary dead-band path, not only an OS pressure event
+  — used to recompute the ceiling from the pool share alone, revoking the floor. On
+  2026-09-26 a 9.3 to 8.2 GB shed took it from 65,536 to 29,659 tokens, below the
+  live conversation, and the tier served disk for the remaining 20 turns with
+  `memory offered 0`. `GovernorPolicy.liveControls` now takes the planner's own
+  ceiling when one exists (the pool share stays the rule for the prefill pass, whose
+  size is a throughput decision), and `PrefixCache.setBudgetLimit` follows the cap in
+  both directions so a later larger plan raises the ceiling back. `governor-check`
+  gates both, including that the captured machine's ladder is the floored case.
+- **Tradeoff.** A ceiling held above what a shrunken pool alone would justify
+  reserves GB the expert cache cannot hold. The shed therefore still releases the
+  states themselves (`PrefixCache.drop`) and gives back that memory immediately; only
+  the permission to refill is kept.
+- **Revision criterion.** A measured in-memory hit rate and follow-up prefill time
+  against ceiling size, at a fixed pool on a quiet machine. Until that runs, the
+  planner's own answer stands and no pool-only share replaces it.
 ## Functional memory acceptance and benchmark eligibility
 
 Global macOS paging is diagnostic for ordinary correctness, context-capacity and process-budget acceptance. It cannot attribute system activity to Slotstream. Keep process ceilings, real headroom, OS pressure handling, allocation safeguards and complete numerical/work checks; report paging separately. Performance comparisons retain declared clean-interval rules, and historical frozen results stay unchanged. The controlling decision is [[records/decisions/global-paging-is-diagnostic]].

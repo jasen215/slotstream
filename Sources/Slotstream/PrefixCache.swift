@@ -234,10 +234,16 @@ public final class PrefixCache {
 
     /// An allocation that has been reassigned to experts cannot be restored
     /// through a later cache toggle. Only a newly applied plan changes this.
+    ///
+    /// The ceiling follows the cap in both directions. Clamping it only
+    /// downward made a single shed permanent for the process lifetime: on
+    /// 2026-09-26 the pool grew back from 8.2 to 10.3 GB and the ceiling stayed
+    /// where the smaller allocation had put it, so the tier could never accept a
+    /// state of the live conversation again.
     package func setBudgetLimit(_ tokens: Int?) {
         lock.withLock {
             budgetLimit = tokens.map { max(0, $0) }
-            if let budgetLimit { _maxTokens = min(_maxTokens, budgetLimit) }
+            if let budgetLimit { _maxTokens = budgetLimit }
             while entries.reduce(0, { $0 + Self.charge($1) }) > _maxTokens { evictLRU() }
         }
     }

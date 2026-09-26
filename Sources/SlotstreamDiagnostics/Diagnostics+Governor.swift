@@ -99,6 +99,54 @@ extension Diagnostics {
             "small gain inside the grow dead-band: hold",
             P.decide(inputs(slots: steady, avail: steadyAvail + 1.0)) == .hold)
 
+        // A shed that lands between two plans must not revoke the retention
+        // floor the planner adopts so one complete conversation stays retained.
+        // The pool-only fallback is right for the prefill pass, whose size is a
+        // throughput decision, and wrong for the prefix ceiling: on 2026-09-26 a
+        // 9.3 -> 8.2 GB shed took it from 65,536 to 29,659 tokens, and every
+        // later turn of a 40k-token conversation was served from disk with
+        // `memory offered 0` although memory had already been given back.
+        // The captured machine: 34.4 GB RAM, 26.8 GB working set, 2,930 slots.
+        let airRAM = 34.4, airWS = 26.8, airSlots = 2_930
+        func air(_ avail: Double) -> P.Inputs {
+            P.Inputs(currentSlots: airSlots, availableGB: avail, ramGB: airRAM,
+                workingSetGB: airWS, maxContextTokens: 65_536)
+        }
+        var retentionSamples = 0, flooredSamples = 0, shortfalls = 0, worstShortfall = 0
+        for step in 1 ... 30 {
+            let i = air(Double(step) * 0.75)
+            guard let desired = P.desiredPlan(i) else { continue }
+            if desired.prefixCacheTokens > Planner.prefixCacheTokensFor(
+                poolBudgetGB: Geometry.gb(desired.slots), contextCap: 65_536) {
+                flooredSamples += 1
+            }
+            let targets = [desired.slots, max(Geometry.floorSlots, desired.slots - 200),
+                           min(Geometry.totalRecords, desired.slots + 200)]
+            for target in targets {
+                retentionSamples += 1
+                let controls = P.liveControls(for: target, inputs: i)
+                if controls.prefixCacheTokens < desired.prefixCacheTokens {
+                    shortfalls += 1
+                    worstShortfall = max(worstShortfall, desired.prefixCacheTokens - controls.prefixCacheTokens)
+                }
+            }
+        }
+        c.expect("the retention-ceiling ladder is not vacuous", retentionSamples >= 10,
+            "\(retentionSamples) samples")
+        c.expect("the capture's machine adopts the one-conversation retention floor",
+            flooredSamples > 0, "\(flooredSamples) of 30 availabilities")
+        c.expect("a shed between plans keeps the planner's retention ceiling", shortfalls == 0,
+            "\(shortfalls) targets fell short by up to \(worstShortfall) tokens")
+        c.measure("retention_ceiling_shortfall_tokens", Double(worstShortfall))
+
+        // And a ceiling a shed lowered has to be able to rise again: clamping it
+        // downward only makes one shed permanent for the process lifetime.
+        let ceiling = PrefixCache(maxTokens: 1_000)
+        ceiling.setBudgetLimit(1_000)
+        ceiling.configure(maxTokens: 1_000)
+        ceiling.setBudgetLimit(4_000)
+        c.equal("a later larger plan raises the prefix ceiling back", ceiling.maxTokens, 4_000)
+
         // Growth is gated on calm and on cooldown.
         let roomy = 30.0
         c.expect(

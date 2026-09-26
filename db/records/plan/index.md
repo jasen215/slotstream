@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/plan
-updated: 2026-09-16T13:38:52.268790Z
+updated: 2026-09-26T03:28:41.931919Z
 ---
 
 # records/plan
 
+- [[records/plan/12-open-questions-answer-at-the-milestone-noted]] — 12. Open questions (answer at the milestone noted)
 - [[records/plan/decode-forecast-taps-2026-09-14]] — A more accurate expert forecast at the same lead time: attention taps, a learned correction and three closed levers, each registered and gated; the corrected tap ships in 0.2.19
 - [[records/plan/deprioritized-decision-2026-08-29]] — Deprioritized (decision 2026-08-29)
 - [[records/plan/configurable-context-window-2026-09-06]] — Configurable context through the model limit: shared byte accounting, request guards, bounded prefill and staged qualification
@@ -18,7 +19,6 @@ updated: 2026-09-16T13:38:52.268790Z
 - [[records/plan/8-1-next-the-ordered-queue-post-0-1-5]] — 8.1 Next — the ordered queue (post-0.1.5)
 - [[records/plan/m1-expert-locality-study-12-d-the-cheap-de-risk]] — M1 — Expert-locality study (1–2 d, the cheap de-risk)
 - [[records/plan/n6-prefill-bound-the-pass-then-read-each-expert-once]] — Standalone N6 execution superseded; retained as the unified optimization program’s detailed prefill chapter, with every mechanism mapped to an OPT owner
-- [[records/plan/12-open-questions-answer-at-the-milestone-noted]] — 12. Open questions (answer at the milestone noted)
 - [[records/plan/11-definition-of-done-v0-1-updated-with-2026-08-28-results]] — 11. Definition of Done — v0.1 (updated with 2026-08-28 results)
 - [[records/plan/9-risk-register]] — 9. Risk register
 - [[records/plan/m9-later-each-gated-on-v0-1-done]] — M9+ — Later (each gated on v0.1 done)

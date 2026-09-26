@@ -3,7 +3,7 @@ type: plan
 meta-type: operational
 id: 01m1hhwp3605p6f1mjs77q43jy
 created: 2026-09-02T17:15:28.230415+00:00
-updated: 2026-09-02T17:15:28.230415+00:00
+updated: 2026-09-26T03:28:41.931919+00:00
 summary: 12. Open questions (answer at the milestone noted)
 date: 2026-08-28
 doc: plan
@@ -48,3 +48,50 @@ title: 12. Open questions (answer at the milestone noted)
    for N1: how often does a real client actually send an exactly-extending prefix
    (tool loops and edited history both break it), i.e. what is the true hit rate of an
    extend-only cache?
+
+11. **NEW (2026-09-24, 32 GB MacBook Air).** Does auto's availability clamp leave an
+   SSD-streaming engine enough room for the file cache its expert reads depend on?
+   The clamp keeps `availabilitySlackGB = max(1.5, 0.05 × RAM)` — 1.7 GB on this
+   machine — and that value is a "do not claim the whole machine" guard, not a
+   performance margin. A live session that sized itself to 21.7 GB against 23.4 GB
+   reclaimable then logged two governor pressure events and swapped
+   ([[sources/runs/2026/09/2026-09-24-m5-air-live-agent-session]]; its timings are
+   discarded, and nothing in this capture is a clean measurement). What answers it:
+   an interleaved A/B of `--memory-limit-gb 16` against auto over the same real turn
+   sequence — protocol in `docs/MEASURE-MEMORY-HEADROOM-AB.md`. **No default moves
+   before that runs.**
+12. **NEW (2026-09-24).** Why does the in-memory prefix tier stop serving a
+   conversation once it is large? The same session took 3 of 23 reusable prefixes
+   from memory and 18 from disk, and the switch begins with the request that
+   follows one which failed during preparation — `takeForGeneration` hands a
+   non-reusable entry out and a failed request has `mayRetainState == false`, so
+   that state is consumed and never returned. Whether that is the whole story, or
+   the retention ceiling and `reserveForRestore` keep the tier empty afterwards, is
+   unresolved: the disk path now prints the memory tier's own
+   `retainedMatchLength` as `memory offered N`. Same capture as item 11.
+
+13. **NEW (2026-09-24).** The prefill ladder's rate is the acceptance prompt's, and
+   ordinary prose is the honest number — recorded, not a defect
+   ([[records/measurements/what-the-sweep-does-not-settle]], and the qualifier
+   already rides the claim [[records/claims/prefill-220-tok-s-at-a-4096-pass]]:
+   ~30% slower, 131 against 184 tok/s at 16 GB). What is *not* written down is
+   why the measured ratio cannot simply be folded into `estPrefillTokS`, so it
+   keeps getting rediscovered: the estimate feeds **three decision surfaces with
+   three different behaviours under a constant factor**.
+   - The automatic context window compares two estimates as a **ratio**, so a
+     uniform factor cancels and the choice is unaffected
+     (`ContextWindowPolicy.automaticWindowRefusal`).
+   - The prefill pass size compares **absolute** seconds across candidate
+     chunks, and only the prefill term moves, so a constant factor reweights
+     prefill against decode and can change the chosen pass (`Plan.prefillChunkFor`).
+   - The prefill wait guard refuses a request when `elapsed + estimate` exceeds
+     `--max-prefill-wait`, so a slower factor makes it refuse **more**
+     (`RequestControl.admit`, `prefillWaitExceeded`).
+   Plus a public claim and the README banner rest on the same ladder. So a prose
+   anchor is a policy change, not a one-line correction: it needs a prose-anchored
+   ladder (or an explicit, documented prose factor) measured at the pass sizes
+   the planner actually picks, recorded as a measurement, with the wait-guard
+   consequence and the claim updated in the same change. Until then the banner
+   says the rate is the acceptance prompt's, and no estimate silently carries a
+   prose factor.
+**Answer to item 12 (2026-09-26).** The tier does not stop because a failed request consumed the state. On [[sources/runs/2026/09/2026-09-26-m5-air-live-agent-session]] the three refusals precede a working memory hit by four minutes, and the switch to disk follows a request that succeeded. `memory offered 0` on all 24 disk reuses localises the cause instead: `GovernorPolicy.liveControls` derives the post-resize prefix ceiling from a pool-only share with no `retentionFloor` whenever the decided target is not exactly the desired plan slot count — the ordinary dead-band path, not only an OS pressure event — so a 9.3 to 8.2 GB shed cut the ceiling from 65,536 to 29,659 tokens, below the live conversation, and `PrefixCache.store` (which admits a state only while `t.count <= _maxTokens`) then refused every boundary snapshot. `PrefixCache.setBudgetLimit` clamped downward only, so the pool regrowing to 10.3 GB could not raise the ceiling again: one shed pinned the tier for the process lifetime. Both are fixed and gated by `governor-check`, which drives the captured machine ladder and asserts that a shed never lowers the ceiling below the planner own retention answer and that a later larger plan raises it back. Item 11 remains open.
