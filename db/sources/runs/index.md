@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/runs
-updated: 2026-09-26T05:19:24.928201Z
+updated: 2026-09-26T06:42:25.247701Z
 ---
 
 # sources/runs
 
+- [[sources/runs/2026/09/2026-09-26-full-acceptance-battery-34gb]] — The full acceptance battery on the 34 GB Air after the current-backend reference environment landed: passed 30, failed 3, all four parity gates green, and two of the three reds are headroom skips
 - [[sources/runs/2026/09/2026-09-26-elastic-drill-arena-trace]] — The elastic drill traced on the 34 GB Air: a 1576-slot arena shrinks to 941 and cannot grow back, because the 1.75 GB round trip is under the 2 GB grow dead-band
 - [[sources/runs/2026/09/2026-09-26-m5-air-live-agent-session]] — A live agent session on the 32 GB Air: three memory refusals, one memory prefix reuse against 24 disk reuses, and the elastic shrink that pinned the in-memory retention ceiling below the conversation
 - [[sources/runs/2026/09/2026-09-24-m5-air-live-agent-session]] — A live 0.2.23 agent session on the 32 GB MacBook Air: two requests refused for memory, one after a 333 s prefill, and the prefix cache answering from disk for 18 of 23 reusable prefixes
@@ -506,9 +507,8 @@ updated: 2026-09-26T05:19:24.928201Z
 - [[sources/runs/2026/09/2026-09-06-optimization-probe-review-and-pressure-recovery]] — Optimization probe preflight review and typed pressure recovery — V181–182
 - [[sources/runs/2026/09/2026-09-06-configurable-context-retained-functional-swap-exclusion]] — Four conversations complete and reuse exact prefixes; capacity excluded by swap activity
 - [[sources/runs/2026/09/2026-09-06-configurable-context-pressure-feasible-recovery-pass]] — Pressure cancellation and feasible admission recovery pass with fixed MTP
-- [[sources/runs/2026/09/2026-09-06-optimization-mtp-fix-and-cache-qualification]] — Optimization MTP cancellation fix and remaining cache qualification — V178–180
 
 ## More
 
-This folder has 684 files. The 500 most recent are listed above.
+This folder has 685 files. The 500 most recent are listed above.
 Use `dbmd query --type run --in sources` for the complete catalog.

@@ -2097,3 +2097,6 @@ Documented the prefix retention ceiling under the memory ceiling section: purpos
 ## [2026-09-26 05:19] update | measured-operating-policies
 The elastic drill FAIL on the 34 GB Air is an arena limit: a 1.75 GB round trip is under the 2.0 GB grow dead-band, traced and captured in sources/runs/2026/09/2026-09-26-elastic-drill-arena-trace
 
+## [2026-09-26 06:42] update | sources/runs/2026/09/2026-09-26-full-acceptance-battery-34gb.md
+Full acceptance battery on the 34 GB Air: passed 30, failed 3, the four current-backend parity gates green after installing the .venv reference; the drill FAIL is the traced arena limit and the other two reds are headroom skips
+

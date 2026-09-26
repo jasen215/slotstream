@@ -2,7 +2,7 @@
 type: index
 scope: layer
 folder: sources
-updated: 2026-09-26T05:19:24.928201Z
+updated: 2026-09-26T06:42:25.247701Z
 ---
 
 # sources
@@ -10,4 +10,4 @@ updated: 2026-09-26T05:19:24.928201Z
 - [[sources/community/index|Community]] (3) — measurement reports from other people's Macs, verbatim
 - [[sources/docs/index|Docs]] (2) — frozen snapshots of the documents the records were lifted from
 - [[sources/references/index|References]] (1) — vendor documentation and prior art cited by measurements and design
-- [[sources/runs/index|Runs]] (684) — raw tool output captured before a number was transcribed
+- [[sources/runs/index|Runs]] (685) — raw tool output captured before a number was transcribed
