@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/runs
-updated: 2026-09-26T13:14:25.063813Z
+updated: 2026-09-26T13:17:19.823049Z
 ---
 
 # sources/runs
 
+- [[sources/runs/2026/09/2026-09-26-disk-prefix-step1-fit]] — restoreSeconds = 21.3 ms + 3.95 ms per 1000 restored tokens (n=9, r2=0.954); the re-read arm's per-token fit fails (n=19, r2=0.012) because its cost unit is one 256-row pass
 - [[sources/runs/2026/09/2026-09-26-disk-prefix-step0-scalars]] — memoryOfferedTokens, residualPrefillTokens and evictionsForRestore recorded per request; the equivalence gate passes and a 4352-token restore cost 0.043-0.062 s while still leaving 927 tokens to read
 - [[sources/runs/2026/09/2026-09-26-tree-verification-step0-probe]] — Draft head top-k recorded at the probe's argmax line; the ranks do not perturb the chain, and the shape model shows both tree shapes lose throughput
 - [[sources/runs/2026/09/2026-09-26-xla4-form-capture-and-fits]] — Protocol xla4-form-20260926: observer-only feature capture and the three forecast-form fits
@@ -506,9 +507,8 @@ updated: 2026-09-26T13:14:25.063813Z
 - [[sources/runs/2026/09/2026-09-06-configurable-context-actual-65k-client-pass]] — Actual Hermes Ollama and published AI SDK gateway clients pass the65K contract
 - [[sources/runs/2026/09/2026-09-06-optimization-c07-source-integration]] — Bounded prefill integration and prompt-cache epoch correction — V183–184
 - [[sources/runs/2026/09/2026-09-06-configurable-context-external-consumer-deprecation-counterexample]] — External Swift consumer compiles but strict warning gate exposes deprecated stride metadata
-- [[sources/runs/2026/09/2026-09-06-configurable-context-actual-32k-client-contracts]] — Actual Ollama and AI SDK clients pass at32K; Hermes enforces its64K minimum
 
 ## More
 
-This folder has 688 files. The 500 most recent are listed above.
+This folder has 689 files. The 500 most recent are listed above.
 Use `dbmd query --type run --in sources` for the complete catalog.

@@ -2172,3 +2172,9 @@ Carlos decided: do not build step 2; the record is withdrawn on the cost evidenc
 ## [2026-09-26 13:14] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 step 0 done: the three scalars populate, the persistent-prefix equivalence gate passes, and a 4352-token restore costs 0.043-0.062 s while leaving 927 tokens to re-read and evicting two conversations; e2e bookkeeping checks are stale, not a regression
 
+## [2026-09-26 13:17] update | records/measurements/disk-tier-cost-arms-2026-09-26.md
+measured: restoreSeconds = 21.3 ms + 3.95 ms per 1000 restored tokens (n=9, r2=0.954); the re-read arm's per-token fit is a negative result (n=19, r2=0.012) and the cost unit is one pass
+
+## [2026-09-26 13:17] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+step 1 done: the disk arm fits tightly (21.3 ms + 3.95 ms/1000 tokens, n=9, r2=0.954) and the re-read arm's per-token fit is a negative result (r2=0.012) because its unit of cost is one 256-row pass; steps 2-5 await a decision on the re-shaped question
+

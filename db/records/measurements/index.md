@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/measurements
-updated: 2026-09-26T12:27:03.754296Z
+updated: 2026-09-26T13:17:19.751328Z
 ---
 
 # records/measurements
 
+- [[records/measurements/disk-tier-cost-arms-2026-09-26]] — A restore costs 21.3 ms plus 3.95 ms per 1000 restored tokens (n=9, r2=0.954); the re-read arm does not fit token count (n=19, r2=0.012) - its unit of cost is one 256-row pass
 - [[records/measurements/tree-verification-does-not-pay-2026-09-26]] — Chain accepts 1.5474 tokens per verify pass at x1.33; a 4-row tree 1.6368 at x1.65 and a 6-row tree 1.7237 at x1.99, so gain over cost falls from 0.752 to 0.641 and 0.559
 - [[records/measurements/expert-lookahead-ranking-forms-2026-09-26]] — Two ranking-aware pre-attention predictor forms, at the shipped lead time and parameter count, score 0.7663 and 0.7672 against the shipped rank-128 ridge correction's re-derived 0.8028
 - [[records/measurements/shared-prefix-boundary-upgrade-2026-09-23]] — A shared prefix at a prompt's own resume boundary: the head is upgraded, and the gate that fails without it

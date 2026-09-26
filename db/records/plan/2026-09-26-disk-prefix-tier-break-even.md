@@ -2,12 +2,13 @@
 type: plan
 id: 01m3ecpsw8ezyhykv7ts5qcq22
 created: 2026-09-26T08:18:32.968493+00:00
-updated: 2026-09-26T13:14:25.124956+00:00
+updated: 2026-09-26T13:17:39.522401+00:00
 summary: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 date: 2026-09-26
 doc: plan
 kind: queue-item
 level: '2'
+note: 'Steps 0 and 1 done. Step 1''s read-arm fit is a negative result under its own rule, so steps 2 to 5 are unshaped and await a decision: the threshold is a pass count, not a token count, and the eviction a restore causes is the co-primary.'
 order: '344'
 title: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 status: open
@@ -67,6 +68,29 @@ not justify its bandwidth cost.
    fitted range, reported as a lower bound on the disk arm's true cost; a fit whose residual spans the
    whole decision range is a negative result and stops the record; and no hardcoded length threshold
    anywhere in the engine.
+
+   **Outcome, 2026-09-26: the disk arm fits, the re-read arm is a negative result, and this step stops
+   there.** Nine restored states of 3584 to 15632 tokens across the recorded turns give
+   `restoreSeconds = 0.0213 + 3.946e-06 * restored tokens` (n=9, r2=0.954, residual p50 +0.0004 s,
+   p90 +0.0046 s) — a lower bound, because the timer starts inside the operations lock and excludes the
+   eviction a restore causes, which step 0 measured at two conversations for one 4352-token restore.
+   The re-read arm does not fit the token count: `seconds = 19.429 + 0.00310 * tokens read`, n=19,
+   **r2=0.012**, residual p50 -17.7 s and p90 +21.1 s, with the same 25-token residual costing 1.50 s
+   in one warm turn and 42.23 s in a cold one of the same run. By this step's own rule that is a
+   negative result and it stops here: no admission rule, no engine arithmetic, steps 2 to 5 not entered
+   by it. Turns used were the registration's named 2026-09-14 trio, the two 2026-09-16 shared-prefix
+   records its limits section admits, and step 0's own run.
+   **The reason is the pass, not the pool**: `PrefillSchedule` keeps a 256-row floor, so reading 18
+   tokens and reading 256 tokens are one pass, and one pass measured 1.5 to 1.7 s at a warm pool and 21
+   to 52 s cold. A restore therefore wins by about 20x when it removes a pass and by three orders of
+   magnitude when it removes a cold one, while a state whose residual stays inside the same pass count
+   saves nothing and costs its restore plus the evictions it causes. **The threshold worth gating is a
+   pass count, not a token count**, which makes step 2 below a different step than the one registered.
+   For whenever it is rewritten: its exit names `Tools/persistent_prefix_e2e.py` passing, and that
+   tool's five bookkeeping checks fail on an expectation that predates shared prefixes — step 0 records
+   why — so the check set needs updating before it can serve as an exit.
+   Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-step1-fit]]; measurement
+   [[records/measurements/disk-tier-cost-arms-2026-09-26]].
 2. Admission in the cache. Per candidate state, choose the cheaper arm using step 1's measured
    constants, leaving the aligned-resume rule, the four-conversation ceiling, the shared-token ceiling
    and the miss-eviction order unchanged. Exit: `optimization-state-check --variant
@@ -92,7 +116,10 @@ One machine and one internal SSD: the break-even point is a property of this dis
 structure and the current planner, and it must be re-derived, not carried, on any other machine. The
 placement study's negative prefetch result is from PCIe-attached tiers with GPU HBM and a simulated
 execution model, so it does not transfer to reading a local SSD into unified memory; its capacity-over-
-placement finding is the reason step 1 measures admission rather than a new placement policy. Steps 1
+placement finding is the reason step 1 measures admission rather than a new placement policy. Step 1's
+negative result leaves this plan open with steps 2 to 5 unshaped rather than withdrawn: the question it
+answered is real but its threshold is a pass count, and the eviction a restore causes — invisible until
+step 0 — is the co-primary that a pass-count rule has to be judged against. Steps 1
 and 2 add no read traffic; only step 3 does, and it is the step the placement study argues against, so
 it runs last and on its own registration.
 
