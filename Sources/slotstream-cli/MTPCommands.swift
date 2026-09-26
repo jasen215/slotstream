@@ -86,9 +86,30 @@ let mtpProbePrompts = [
     "A train leaves at 9:12 and arrives at 11:47. How long is the trip? Think it through step by step.",
 ]
 
-struct GreedyTrace {
+/// One ranked candidate from the draft head, with the raw logit so a caller can
+/// form its own margins. A tree branches on these; rank 0 is what the chain uses.
+struct DraftRank: Codable {
+    var id: Int
+    var logit: Float
+}
+
+struct GreedyTrace: Codable {
     var tokens: [Int] = []  // generated tokens, in order
     var draftsAt: [[Int]] = []  // draft chain proposed at each position
+    /// The draft head's top-k at each step of each chain, rank 0 first. Empty
+    /// unless the probe was asked for ranks; recording them never changes the
+    /// chain, because the chain still takes rank 0.
+    var ranksAt: [[[DraftRank]]] = []
+}
+
+/// What `mtp-accept --out` writes: enough to model tree shapes offline without
+/// another model run.
+struct MTPAcceptDump: Codable {
+    var depth: Int
+    var topK: Int
+    var maxTokens: Int
+    var prompts: [String]
+    var traces: [GreedyTrace]
 }
 
 // MARK: mtp-accept
@@ -105,9 +126,12 @@ struct MTPAccept: ParsableCommand {
     @OptionGroup var model: ModelOptions
     @Option(help: "Tokens to generate per prompt") var maxTokens: Int = 96
     @Option(help: "Draft chain depth to probe") var depth: Int = 4
+    @Option(help: "Record the draft head's top-k at each step (0 = ranks off)") var topK: Int = 0
+    @Option(help: "Write prompts and traces, ranks included, as JSON") var out: String?
 
     func run() throws {
         guard depth >= 1, depth <= 8 else { throw ValidationError("--depth must be 1...8") }
+        guard topK >= 0, topK <= 64 else { throw ValidationError("--top-k must be 0...64") }
         let plan = try model.announcedPlan(requireMTP: true)
         let sem = DispatchSemaphore(value: 0)
         var result: Result<Void, Error> = .success(())
@@ -120,11 +144,19 @@ struct MTPAccept: ParsableCommand {
                         [ChatMessage(role: "user", content: prompt)], thinking: false)
                     let t = probeGreedy(
                         model: engine.model, promptIds: ids, eosIds: engine.eosIds,
-                        maxTokens: maxTokens, depth: depth)
+                        maxTokens: maxTokens, depth: depth, topK: topK)
                     traces.append(t)
                     FileHandle.standardError.write(
                         "prompt \(i + 1)/\(mtpProbePrompts.count): \(t.tokens.count) tokens\n"
                             .data(using: .utf8)!)
+                }
+                if let out {
+                    let dump = MTPAcceptDump(
+                        depth: depth, topK: topK, maxTokens: maxTokens,
+                        prompts: mtpProbePrompts, traces: traces)
+                    let enc = JSONEncoder()
+                    enc.outputFormatting = [.sortedKeys]
+                    try enc.encode(dump).write(to: URL(fileURLWithPath: out))
                 }
                 report(traces: traces, depth: depth)
                 result = .success(())
@@ -138,7 +170,8 @@ struct MTPAccept: ParsableCommand {
     /// Greedy decode that keeps the MTP cache on the true path and records a
     /// draft chain at every position without perturbing generation.
     func probeGreedy(
-        model: Qwen4ExpModel, promptIds: [Int], eosIds: Set<Int>, maxTokens: Int, depth: Int
+        model: Qwen4ExpModel, promptIds: [Int], eosIds: Set<Int>, maxTokens: Int, depth: Int,
+        topK: Int = 0
     ) -> GreedyTrace {
         guard let head = model.mtpHead else { fatalError("MTP head not enabled") }
         let state = model.makeState()
@@ -173,17 +206,29 @@ struct MTPAccept: ParsableCommand {
             // draft chain from (lastMulti, pending) — provisional entries, rolled back
             let offset0 = mtp.offset
             var drafts: [Int] = []
+            var stepRanks: [[DraftRank]] = []
             var dMulti = state.lastMulti!
             var dTok = pending
             for _ in 0 ..< depth {
                 let e = model.resident.embed(MLXArray([Int32(dTok)], [1, 1])).asType(.bfloat16)
                 let (s, m) = head(embedded: e, hiddenMulti: dMulti, rope: rope, state: mtp)
-                dTok = argMax(model.draftLogits(s).reshaped([-1]).asType(.float32)).item(Int.self)
+                let flat = model.draftLogits(s).reshaped([-1]).asType(.float32)
+                if topK > 0 {
+                    // Ranks only: the chain below still takes rank 0, so asking
+                    // for them cannot move the tokens this probe records.
+                    let values = flat.asArray(Float.self)
+                    let order = argSort(-flat).asArray(Int32.self)
+                    stepRanks.append((0 ..< min(topK, order.count)).map {
+                        DraftRank(id: Int(order[$0]), logit: values[Int(order[$0])])
+                    })
+                }
+                dTok = argMax(flat).item(Int.self)
                 drafts.append(dTok)
                 dMulti = m
             }
             mtp.trim(to: offset0)
             trace.draftsAt.append(drafts)
+            if topK > 0 { trace.ranksAt.append(stepRanks) }
 
             // consume pending for real (true-path MTP entry), next token
             let (vLogits, vMulti) = model.allLogitsWithMulti([pending], state: state)

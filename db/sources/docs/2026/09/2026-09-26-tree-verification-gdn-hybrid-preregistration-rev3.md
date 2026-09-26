@@ -1,16 +1,15 @@
 ---
 type: doc-snapshot
-id: 01m3esdk8kepggnyhs8a6ffqs6
-created: 2026-09-26T12:00:42.771022+00:00
-updated: 2026-09-26T12:03:58.422432+00:00
-summary: 'Pre-registration for order 343: tree verification for the GDN hybrid, frozen 2026-09-26'
+id: 01m3ete2sk68jdazhn3ty1b0z2
+created: 2026-09-26T12:18:27.251916+00:00
+updated: 2026-09-26T12:18:27.849194+00:00
+summary: 'Pre-registration for order 343: tree verification for the GDN hybrid, frozen 2026-09-26 (rev 3)'
 captured_at: 2026-09-26
 dirty: 'true'
 git_head: cebdd8e9e7424ece78bf447a0c41199e6fb6a236
 original_path: .build/tree-verification-20260926/preregistration.md
-sha256: 0489d3dddb7a7913bf36a20721a96c775669160529d0958bad5578a5370c10c7
-title: 'Pre-registration for order 343: tree verification for the GDN hybrid, frozen 2026-09-26'
-status: superseded
+sha256: 500bd3186ef809fa836c0810eccc1a29ce64948dd28dad2ea4c13c92fe07112f
+title: 'Pre-registration for order 343: tree verification for the GDN hybrid, frozen 2026-09-26 (rev 3)'
 ---
 # Pre-registration: order 343, tree verification for the GDN hybrid
 
@@ -61,11 +60,25 @@ persists it to a fixture, and `MTPAccept.probeGreedy`
 continuation, not the ranks below it. So both of step 1's named inputs have to be produced
 by step 0, and the plan record's step 1 wording is corrected accordingly.
 
-**Decision.** Step 0 below extends the observation seam rather than changing the engine's
-arithmetic: emit the draft head's top-k ids and margins per verify position using the
-**existing kind 10 layout** with a new tap code, at no model-arithmetic change. Its gate is
-self-referential and checkable: replaying the shipped draft chain from the recording must
-reproduce kind 8's `kept` for every pass of the same capture, or the recording is rejected.
+**Decision, revised 2026-09-26 before any data.** Step 0 is **not** a change to the pilot
+capture seam: it is the engine's own probe. `MTPAccept.probeGreedy`
+(`Sources/slotstream-cli/MTPCommands.swift:140-195`) already runs the draft head at every
+position, rolls its cache back, and scores the chain against the real greedy continuation; it
+calls `argMax(model.draftLogits(s))` and throws the rest of the distribution away. Recording
+the **top-k** at that line is a purely diagnostic change in the CLI, on a file the other
+session's working tree has not touched, so it needs no engine edit at all. Its gate is
+checkable against a run that already exists: with `--top-k` on, the rank-0 ids must equal
+`draftsAt` and the reported accept curve must equal the curve from `--top-k` off, bit for
+bit.
+
+**The expert-bytes half of the co-primary gate is not decidable offline**, and this is the
+one gate wording this pre-registration weakens before any data exists. A tree's expert union
+needs the per-layer routing of rows the model never actually produced — a branch away from
+the true continuation has no recorded routing — so no offline model of the probe data can
+predict bytes per committed token. The bar does not move: it is measured at G2, where the
+tree's rows really run. Offline, the union of the **true** continuation's routing may be
+quoted as an indicative under-estimate (off-path tokens route somewhere, so the true union is
+larger) and must never be reported as the gate.
 
 ## 2. The question
 
@@ -84,25 +97,28 @@ experts are streamed from disk.
 | `tree-6` | node budget 6: branching factor 2 at the first node and 3 at the second, or 3 then 2, whichever the declared rule yields |
 | `tree-off` | the shipped build with the tree path disabled, a bit-identity control |
 
-The branching rule is the draft head's own top-k at each expanded node, k = 2 (and 3 only
-for the budget-6 arm at one level), deterministic tie-break by higher margin then lower
-expert id. No arm may substitute an expert, prune the model, or change what "accepted"
+The branching rule is the draft head's own top-k at each expanded node, deterministic
+tie-break by higher margin then lower expert id. The shapes are fixed as: **`tree-4`** two
+level-1 nodes, each with one child (4 new rows, 5 rows in the pass); **`tree-6`** two level-1
+nodes, each with two children (6 new rows, 7 rows in the pass). The earlier wording offered
+"2 then 3, or 3 then 2" as an alternative and that is withdrawn: either reading is 8 or 9 new
+rows, not a budget of 6. No arm may substitute an expert, prune the model, or change what "accepted"
 means: a node is accepted exactly when the target's own verification accepts it.
 
 ## 4. Declared shapes and the exact commands
 
-Step 0, the capture extension, is the only engine change before step 1 and is arithmetic
-inert (observation only). **`--draft-topk` does not exist yet**: it is the interface this
-step adds, and the command below is therefore the shape of the step, not something that can
-be run today.
+Step 0 is arithmetic inert by construction. **`--top-k` does not exist yet**: it is the
+interface this step adds to `mtp-accept`, and the block below is the shape of the step, not
+something that can be run today. The prompt set for steps 0 and 1 is the CLI's own four probe
+prompts, prose, code, list and reasoning, frozen in code at
+`Sources/slotstream-cli/MTPCommands.swift:82-87`; the forecast program's corpus prompts are
+the G5 screen, not this step's input.
 
 ```
-# after the seam records the draft head's top-k with a new tap code, capture the frozen prompts
-Tools/expert_lookahead.py capture --protocol .build/tree-verification-20260926/protocol.json \
-  --out .build/tree-verification-20260926/capture \
-  --requests .build/tree-verification-20260926/requests.jsonl \
-  --features off --x2 on --capture on --forecast-taps attention \
-  --forecast-inputs on --forecast-per-row 24 --draft-topk on
+# step 0: same probe, once with the ranks and once without, and the two must agree
+slotstream mtp-accept --memory-gb 12 --depth 2 --max-tokens 96 --top-k 4 \
+  --out .build/tree-verification-20260926/probe-depth2-topk4.json
+slotstream mtp-accept --memory-gb 12 --depth 2 --max-tokens 96
 ```
 
 Step 1 replays the recording offline: for every verify pass, reconstruct the reference
@@ -146,10 +162,16 @@ outputs at 20 GB.
 
 ## 6. Gates
 
-- **G1, offline shape, before any engine change.** Predicted committed tokens per verify
-  forward at least 10% above `chain-2` on the frozen prompts, with predicted expert bytes
-  per committed token no worse than `chain-2`'s. A negative reading closes the shape
-  question at the terminal and costs no model launch.
+- **G1, offline shape, before any engine change.** Under greedy decoding exactly one child
+  per node can be accepted (the one equal to the true continuation). The probe records the
+  draft head only along the rank-0 chain, so **the first level is exactly decidable and
+  everything below it is a lower bound** — the children of a non-rank-0 node are not
+  recorded. G1 therefore reads a bound: a lower bound already 10% above `chain-2` on the
+  frozen probe prompts is a go, and a bound below it does not by itself close the question,
+  it only denies the cheap evidence. The expert-bytes half is **not** decidable
+  offline and is judged at G2 on the real rows; the offline indicative under-estimate may be
+  quoted beside it, never as the gate. A negative acceptance reading closes the shape
+  question at the terminal and costs no engine change.
 - **G2, correctness without timing.** With the tree forced on for fixed prompts: the
   accepted chain's prompt logits equal the shipped chain's for the same accepted ids within
   the band re-chunking already moves, `mtp-check`'s fused-versus-stepped identity still
@@ -219,11 +241,3 @@ with the reason and the timestamp.
   number from it transfers.
 - One machine, one checkpoint, one SSD: the break-even of breadth against streamed bytes is
   a property of this disk and planner and must be re-derived, not carried.
-
-## Correction, 2026-09-26, before any data
-
-This text was corrected before any data existed, and the corrected text is a separate
-record: the step 0 observation seam moved from the pilot capture to the engine's own
-`mtp-accept` probe (no engine change at all), and the expert-bytes half of the co-primary
-gate is not decidable offline and is judged at G2 on the real rows. Superseded by
-[[sources/docs/2026/09/2026-09-26-tree-verification-gdn-hybrid-preregistration-rev2]].

@@ -2157,3 +2157,9 @@ preregistration frozen (sha256 0489d3dd) and snapshotted into sources/docs; corr
 ## [2026-09-26 12:02] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 preregistration frozen (sha256 c020840a) and snapshotted into sources/docs; corrected 'both arms already instrumented' to the disk arm only and added step 0 for memoryOfferedTokens/residualPrefillTokens/evictionsForRestore
 
+## [2026-09-26 12:03] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
+pre-data revision: step 0 is the mtp-accept --top-k probe (no engine change, no capture seam), step 1 is acceptance-side only because no offline data can carry the expert bytes of off-path rows; prereg sha256 2d2104fa, first snapshot superseded
+
+## [2026-09-26 12:26] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
+step 0 probe and step 1 shape model executed: negative (trees buy 0.044 accepted tokens per extra row against the 0.166 they must), record withdrawn, measurement tree-verification-does-not-pay-2026-09-26
+

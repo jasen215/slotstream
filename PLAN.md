@@ -6469,13 +6469,33 @@ proof; none of it transfers as a number.
 
 ## Steps, in dependency order
 
-0. Observation seam for the draft head, correctness without timing. Record the draft head's top-k
-   ids and margins per verify position using the existing forecast record layout with a new tap code,
-   and the per-position linear states the shape model needs. Exit: replaying the shipped draft chain
-   from the recording reproduces the recorded accepted length for every pass of the same capture;
-   a recording that cannot is rejected rather than patched. Note added 2026-09-26: neither input is
-   on disk today, so this step precedes the one below rather than being implied by it.
-1. Offline shape and acceptance model, no engine change. From the recorded per-position linear states
+0. Observation, correctness without timing. Record the draft head's top-k at the probe's own
+   `argMax` line in `MTPAccept.probeGreedy` (`Sources/slotstream-cli/MTPCommands.swift:140-195`), on
+   the CLI's four frozen probe prompts. Exit: with the ranks recorded the chain, the accept curve and
+   the ordinary statistics are identical to a run without them. Revised 2026-09-26: this was written as
+   a capture-seam extension, and the probe needs no engine change and touches none of the files another
+   session has open.
+1. Offline shape and acceptance model, no engine change, acceptance side only: under greedy decoding
+   exactly one child per node can be accepted, so the probe decides this half exactly. The expert-bytes
+   half of the gate is not decidable offline (a branch away from the true continuation has no recorded
+   routing) and is judged at step 3 with the bar unchanged.
+
+   **Outcome, 2026-09-26: negative — the shape question is closed at the adopted depth.** The probe
+   recorded the draft head's top-k on four prompts, 380 positions, with the chain and the accept curve
+   byte-identical to a run without the ranks (85.3% at depth 1, 70.2% at depth 2, reproducing the
+   recorded 85.8%/71.0% within 0.8 points). The offline lower-bound model then read: the shipped chain
+   accepts 1.5474 tokens per verify pass at x1.33 of a one-token pass, `tree-4` 1.6368 (+5.8%) at
+   x1.65, `tree-6` 1.7237 (+11.4%) at x1.99 — gain over cost 0.752 against 0.641 and 0.559. Only
+   `tree-6` clears the +10% token bar and it costs about twice a chain pass, so both shapes lose
+   throughput. The deciding number is what a row buys: each extra verify row costs about a sixth of a
+   pass, so a tree pays only above 0.166 accepted tokens per extra row, and these buy about 0.044.
+   Measurement: [[records/measurements/tree-verification-does-not-pay-2026-09-26]]; raw output:
+   [[sources/runs/2026/09/2026-09-26-tree-verification-step0-probe]]. Steps 2 through 5 were not
+   executed: with the shape question closed there is no branch-local recurrent verification to build,
+   no ancestry mask to add and nothing to screen, and this record is withdrawn with that reason rather
+   than left open. What is still open is a different question, named in the measurement's last
+   section: a tree at a longer chain depth, one whose rows cost less than about 8 ms, or one whose gain
+   comes from sampling rather than greedy acceptance — each needs its own registration. From the recorded per-position linear states
    and the frozen pilot prompts, compute for candidate trees (node budgets 4 and 6, branching from the
    draft head's own logits at the adopted depth) the accepted chain length and the routed-expert union
    per verify pass, against the shipped chain on the same prompts. Exit: predicted committed tokens per
@@ -6517,9 +6537,12 @@ a decision says otherwise.
 
 Frozen 2026-09-26 before any data for this question exists:
 `.build/tree-verification-20260926/preregistration.md`, sha256
-`0489d3dddb7a7913bf36a20721a96c775669160529d0958bad5578a5370c10c7`, committed into the store as
-[[sources/docs/2026/09/2026-09-26-tree-verification-gdn-hybrid-preregistration]] so the text outlives
-the scratch directory. It names the tree shapes (node budgets 4 and 6, plus the shipped chain and a
+`500bd3186ef809fa836c0810eccc1a29ce64948dd28dad2ea4c13c92fe07112f`, committed into the store as
+[[sources/docs/2026/09/2026-09-26-tree-verification-gdn-hybrid-preregistration-rev3]] so the text
+outlives the scratch directory (revisions 1 and 2 are superseded before any data). Revised before any data existed: step 0 is the probe rather than a capture-seam change, the
+expert-bytes half of the gate is judged at step 3, the shapes are pinned (`tree-4` two level-1
+nodes with one child each; `tree-6` two level-1 nodes with two children each), and G1 reads a
+**lower bound** because the probe follows the draft head along the rank-0 chain only. It names the tree shapes (node budgets 4 and 6, plus the shipped chain and a
 tree-off bit-identity control), the branching rule (the draft head's own top-k at each expanded node,
 deterministic tie-break by higher margin then lower expert id), the prompt set (the frozen corpus: the
 four exploration prompts for the screen, then eight unused training-split families for the confirmation)

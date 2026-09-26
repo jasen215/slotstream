@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/measurements
-updated: 2026-09-26T11:24:45.624910Z
+updated: 2026-09-26T12:26:10.686647Z
 ---
 
 # records/measurements
 
+- [[records/measurements/tree-verification-does-not-pay-2026-09-26]] — Chain accepts 1.5474 tokens per verify pass at x1.33; a 4-row tree 1.6368 at x1.65 and a 6-row tree 1.7237 at x1.99, so gain over cost falls from 0.752 to 0.641 and 0.559
 - [[records/measurements/expert-lookahead-ranking-forms-2026-09-26]] — Two ranking-aware pre-attention predictor forms, at the shipped lead time and parameter count, score 0.7663 and 0.7672 against the shipped rank-128 ridge correction's re-derived 0.8028
 - [[records/measurements/shared-prefix-boundary-upgrade-2026-09-23]] — A shared prefix at a prompt's own resume boundary: the head is upgraded, and the gate that fails without it
 - [[records/measurements/shared-prefix-live-acceptance-2026-09-24]] — A live serve process on the fixed build: a shared prefix colliding with a conversation checkpoint is upgraded, reused by another conversation, kept by a deeper save and restored across a restart
