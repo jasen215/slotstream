@@ -2,7 +2,7 @@
 type: plan
 id: 01m3ecpsw8ezyhykv7ts5qcq22
 created: 2026-09-26T08:18:32.968493+00:00
-updated: 2026-09-26T08:18:32.968493+00:00
+updated: 2026-09-26T12:02:30.054655+00:00
 summary: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 date: 2026-09-26
 doc: plan
@@ -38,12 +38,23 @@ not justify its bandwidth cost.
 
 ## Steps, in dependency order
 
+0. Observation, no engine arithmetic. Add `memoryOfferedTokens` and `residualPrefillTokens` to
+   `PersistentPrefixObservation` and `evictionsForRestore` to `reserveForRestore`. Correction,
+   2026-09-26: this record said both arms were already instrumented, and that holds for the disk arm
+   only (`restoreSeconds`/`restoreBytes`/`restoredTokens` exist, though timed inside the operations
+   lock and after the eviction they trigger). The recompute arm has no same-request counterfactual:
+   `prefillTokens` merges the resumed and re-read tokens, and what memory offered never leaves a log
+   line. Exit: with the tier off the ordinary statistics are byte-identical to the shipped build's, and
+   where a value appears both in a log line and in a statistic the two agree.
 1. Cost model from existing evidence, no engine change and no model launch. For the turns the store
    already records, resolve both arms per candidate state: (a) the disk read plus restore cost of the
    persisted state, and (b) the re-prefill cost from the request's last aligned pass boundary to the
-   same length. Both are already instrumented in the prefix and disk receipts. Exit: a fitted model of
-   both arms over recorded turns, reported with its residual and its fitted range, with no hardcoded
-   length threshold anywhere in the engine.
+   same length, whose token distance is deterministic from the prompt length and the chunk size
+   (`PrefillSchedule.resumeBoundaries`), with `PrefillSchedule.estSeconds` available as a weights-free
+   estimator. Exit: a fitted model of both arms over recorded turns, each with its residual and its
+   fitted range, reported as a lower bound on the disk arm's true cost; a fit whose residual spans the
+   whole decision range is a negative result and stops the record; and no hardcoded length threshold
+   anywhere in the engine.
 2. Admission in the cache. Per candidate state, choose the cheaper arm using step 1's measured
    constants, leaving the aligned-resume rule, the four-conversation ceiling, the shared-token ceiling
    and the miss-eviction order unchanged. Exit: `optimization-state-check --variant
@@ -75,5 +86,14 @@ it runs last and on its own registration.
 
 ## Registration
 
-Needs its own pre-registration before step 1's fit, naming the recorded turns used, the two cost
-estimators, the residual bound and the admission rule, before any A/B exists.
+Frozen 2026-09-26 before any measurement of this question exists:
+`.build/disk-prefix-tier-20260926/preregistration.md`, sha256
+`c020840abf4bf34194658f0b21b66943c9562272ec739a71a54f6fc65756c584`, committed into the store as
+[[sources/docs/2026/09/2026-09-26-disk-prefix-tier-break-even-preregistration]] so the text outlives
+the scratch directory. It names the recorded turns used for the fit
+([[sources/runs/2026/09/2026-09-14-persistent-prefix-segments-exactness]] and its two companions,
+with the discarded M5 Air live session excluded from timing), the two cost estimators, the residual
+bound (a fit whose residual spans the decision range closes the record), the admission rule (a pure
+function of the fitted constants, which a gate must be able to flip, with no length or cost threshold
+hardcoded in the engine) and the warning that `optimization-state-check --help`'s variant list is
+stale, so the dispatch in `OptimizationCommands.swift` is the authority.

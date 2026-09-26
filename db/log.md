@@ -2151,3 +2151,9 @@ corrected: the body carried four copies of the record's own frontmatter (FM_IN_B
 ## [2026-09-26 11:24] update | records/measurements/expert-lookahead-ranking-forms-2026-09-26.md
 G2/G3 evaluated from the twin: the ranking arms lose on coverage too (+0.018 vs the ridge's +0.043 at matched traffic) and every form wastes fewer reads; the earlier observer-only claim is corrected
 
+## [2026-09-26 12:00] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
+preregistration frozen (sha256 0489d3dd) and snapshotted into sources/docs; corrected the pass-cost attribution: the adopted depth-2 pass is three rows at x1.33, 1.65 is the depth-4 five-row pass; added step 0 because neither input of step 1 is on disk
+
+## [2026-09-26 12:02] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+preregistration frozen (sha256 c020840a) and snapshotted into sources/docs; corrected 'both arms already instrumented' to the disk arm only and added step 0 for memoryOfferedTokens/residualPrefillTokens/evictionsForRestore
+

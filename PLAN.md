@@ -6444,8 +6444,12 @@ model family.
 ## Problem
 
 Speculation here is a single chain at the adopted draft depth of two, verified in one target forward
-pass, with a measured pass-cost ratio of 1.65 when every expert is resident
-([[records/plan/decode-forecast-taps-2026-09-14]]). A tree verifies several candidate continuations in
+pass: a **three-row** pass, measured at x1.33 of a one-token pass with every expert resident, against
+x1.65 for the five-row depth-4 pass, each extra row costing about 8 ms linearly
+([[records/measurements/the-plateau-its-ceiling-measured-then-the-a-b-itself-2026-09-02]]). Correction,
+2026-09-26: an earlier version of this paragraph attached 1.65 to the adopted depth; that is the depth-4
+number and the fetch-free ceiling with the shipped accept curve is x1.48 at depth 2 against x1.38 at
+depth 4, so the cost side of the gate is x1.33. A tree verifies several candidate continuations in
 the same forward pass, so it raises committed tokens per pass without changing what "accepted" means.
 
 The difficulty is specific to this model's layers. For an attention-only transformer the verifier needs
@@ -6465,6 +6469,12 @@ proof; none of it transfers as a number.
 
 ## Steps, in dependency order
 
+0. Observation seam for the draft head, correctness without timing. Record the draft head's top-k
+   ids and margins per verify position using the existing forecast record layout with a new tap code,
+   and the per-position linear states the shape model needs. Exit: replaying the shipped draft chain
+   from the recording reproduces the recorded accepted length for every pass of the same capture;
+   a recording that cannot is rejected rather than patched. Note added 2026-09-26: neither input is
+   on disk today, so this step precedes the one below rather than being implied by it.
 1. Offline shape and acceptance model, no engine change. From the recorded per-position linear states
    and the frozen pilot prompts, compute for candidate trees (node budgets 4 and 6, branching from the
    draft head's own logits at the adopted depth) the accepted chain length and the routed-expert union
@@ -6505,9 +6515,17 @@ a decision says otherwise.
 
 ## Registration
 
-Needs its own pre-registration before step 1, naming the tree shapes, the branching rule, the prompt
-set and the two gates (tokens per pass, expert bytes per committed token) before any data exists.
-Step 2 is the first engine change and must not be merged behind a default.
+Frozen 2026-09-26 before any data for this question exists:
+`.build/tree-verification-20260926/preregistration.md`, sha256
+`0489d3dddb7a7913bf36a20721a96c775669160529d0958bad5578a5370c10c7`, committed into the store as
+[[sources/docs/2026/09/2026-09-26-tree-verification-gdn-hybrid-preregistration]] so the text outlives
+the scratch directory. It names the tree shapes (node budgets 4 and 6, plus the shipped chain and a
+tree-off bit-identity control), the branching rule (the draft head's own top-k at each expanded node,
+deterministic tie-break by higher margin then lower expert id), the prompt set (the frozen corpus: the
+four exploration prompts for the screen, then eight unused training-split families for the confirmation)
+and both gates: committed tokens per verify-forward at least 10% above the shipped chain, and expert
+bytes per committed token no worse than the shipped chain's. Step 2 is the first engine change and must
+not be merged behind a default.
 
 ## The disk prefix tier: a measured load-versus-recompute admission and a queued preload
 Opened on 2026-09-26 from the persistent prefix cache's own semantics
@@ -6536,12 +6554,23 @@ not justify its bandwidth cost.
 
 ## Steps, in dependency order
 
+0. Observation, no engine arithmetic. Add `memoryOfferedTokens` and `residualPrefillTokens` to
+   `PersistentPrefixObservation` and `evictionsForRestore` to `reserveForRestore`. Correction,
+   2026-09-26: this record said both arms were already instrumented, and that holds for the disk arm
+   only (`restoreSeconds`/`restoreBytes`/`restoredTokens` exist, though timed inside the operations
+   lock and after the eviction they trigger). The recompute arm has no same-request counterfactual:
+   `prefillTokens` merges the resumed and re-read tokens, and what memory offered never leaves a log
+   line. Exit: with the tier off the ordinary statistics are byte-identical to the shipped build's, and
+   where a value appears both in a log line and in a statistic the two agree.
 1. Cost model from existing evidence, no engine change and no model launch. For the turns the store
    already records, resolve both arms per candidate state: (a) the disk read plus restore cost of the
    persisted state, and (b) the re-prefill cost from the request's last aligned pass boundary to the
-   same length. Both are already instrumented in the prefix and disk receipts. Exit: a fitted model of
-   both arms over recorded turns, reported with its residual and its fitted range, with no hardcoded
-   length threshold anywhere in the engine.
+   same length, whose token distance is deterministic from the prompt length and the chunk size
+   (`PrefillSchedule.resumeBoundaries`), with `PrefillSchedule.estSeconds` available as a weights-free
+   estimator. Exit: a fitted model of both arms over recorded turns, each with its residual and its
+   fitted range, reported as a lower bound on the disk arm's true cost; a fit whose residual spans the
+   whole decision range is a negative result and stops the record; and no hardcoded length threshold
+   anywhere in the engine.
 2. Admission in the cache. Per candidate state, choose the cheaper arm using step 1's measured
    constants, leaving the aligned-resume rule, the four-conversation ceiling, the shared-token ceiling
    and the miss-eviction order unchanged. Exit: `optimization-state-check --variant
@@ -6573,8 +6602,17 @@ it runs last and on its own registration.
 
 ## Registration
 
-Needs its own pre-registration before step 1's fit, naming the recorded turns used, the two cost
-estimators, the residual bound and the admission rule, before any A/B exists.
+Frozen 2026-09-26 before any measurement of this question exists:
+`.build/disk-prefix-tier-20260926/preregistration.md`, sha256
+`c020840abf4bf34194658f0b21b66943c9562272ec739a71a54f6fc65756c584`, committed into the store as
+[[sources/docs/2026/09/2026-09-26-disk-prefix-tier-break-even-preregistration]] so the text outlives
+the scratch directory. It names the recorded turns used for the fit
+([[sources/runs/2026/09/2026-09-14-persistent-prefix-segments-exactness]] and its two companions,
+with the discarded M5 Air live session excluded from timing), the two cost estimators, the residual
+bound (a fit whose residual spans the decision range closes the record), the admission rule (a pure
+function of the fitted constants, which a gate must be able to flip, with no length or cost threshold
+hardcoded in the engine) and the warning that `optimization-state-check --help`'s variant list is
+stale, so the dispatch in `OptimizationCommands.swift` is the authority.
 
 ### M9 design note — MTP self-speculative decode: when it pays, and when experts win
 
