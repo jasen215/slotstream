@@ -6324,6 +6324,227 @@ using slotstream; they are credibility artifacts and completeness for the milest
 
 ---
 
+## Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate
+Opened on 2026-09-26 from the closing state of [[records/plan/decode-forecast-taps-2026-09-14]], which
+names the forecast's own form and its issue decision as the parts the program never tested, and from
+two external results recorded as prior art:
+[[sources/references/2026/09/2026-09-26-pre-attention-expert-prediction]] and
+[[sources/references/2026/09/2026-09-26-apex-adaptive-expert-prefetching]].
+
+## Problem
+
+The shipped forecast is a tap plus a learned rank-128 ridge correction: validation top-10 agreement
+0.7980 against the plain attention tap's 0.7292, and the corrected tap decoded at 1.111x the qualified
+configuration on held-out prompts ([[records/measurements/decode-forecast-taps-2026-09-15]]). The tap
+position is settled. What has never been separated is the *form* of the predictor and the *issue
+decision*:
+
+- The learned part is a single ridge regression fitted on one recorded feature per target layer, and
+  the half that would carry a ranking objective was never fitted.
+- The issue decision is still a fixed 0.062 margin cutoff. The one registered attempt to lower it
+  issued late reads and wasted 2.4 times the bytes (step 10 of the closed record), which is evidence
+  against that *cutoff value*, not against a learned confidence model.
+
+The two papers describe exactly these two mechanisms and report high accuracies, but on other models,
+other engines and other hardware. Cross-model accuracy does not transfer, so the gates below are all
+relative to this project's own measured tap and correction at equal lead time, equal staged memory and
+equal trained-parameter count. A negative outcome is a useful result: it would say the predictor
+family is closed and leave only the issue decision, or close both.
+
+## Steps, in dependency order
+
+1. Feature capture and predictor families, offline. Reuse the existing capture seam for the pilot's 56
+   training and 13 validation requests and record, per target layer, the same-layer pre-attention
+   streams the boundary tap already reads, the shipped tap's recorded candidates, and the true router
+   input. Fit three families at equal memory and equal parameter count: (a) the shipped rank-128 ridge
+   correction as the reference, (b) a two-linear-map form trained with a ranking-aware loss, (c) the
+   ridge correction re-fitted with a ranking-aware objective. Exit: validation top-10 agreement at
+   least 0.05 above 0.7980 and twin coverage at the shipped traffic at least 0.05 above 0.6209 with no
+   more wasted reads, within 64 MiB of FP16 weights, before any native code. No model launch is needed
+   for this step.
+2. Issue decision, offline. From the same capture, record per issued candidate its confidence feature,
+   whether its read was adopted, and whether it arrived before use. Fit a calibrated confidence model
+   to decide issue/adopt in place of the fixed margin. Exit: at the shipped read traffic, adopted and
+   timely reads at least 0.03 above the fixed margin's with no more wasted read bytes; and at a matched
+   adopted rate, at least 0.20 fewer wasted bytes. A positive reading here is not a speed claim.
+3. Native correctness without timing. Apply the surviving predictor and/or issue model as a new tap
+   (`attention-ranking`, plus a confidence field on the existing tap record), loaded at engine start
+   and charged to the lookahead reserve. Capture the 13 validation requests. Exit, over targets 2 to 47:
+   the native top-10 set equals the offline set in at least 99% of rows, native agreement within 0.005
+   of the offline value, and the plain and corrected taps still read 0.7292 and 0.7980 within 0.002.
+4. Screen: the qualified configuration against each surviving arm on the exploration prompts at 256
+   outputs under the contention rule, adding rounds until 12 counted pairs per arm or six. Exit:
+   identical outputs and a paired ratio of at least 1.01 with at least 8 of the first 12 counted pairs
+   above 1, before confirmation.
+5. Held-out confirmation: eight prompts from unused training-split families, three rounds at 512
+   outputs at 20 GB. Exit: identical outputs, aggregate at least 1.02, lower bootstrap bound above
+   1.00, no family median below 0.97, no family duration regression above 2%, at least two counted
+   pairs per prompt.
+6. Changing the default, the artifact's home, docs and any public number are a separate decision after
+   step 5.
+
+Steps 1 and 2 need no model launch and may run whenever no timed run is active; neither waits for the
+other. Step 3 is the first step that touches engine source.
+
+## Limits
+
+One machine. The cited accuracies are the papers' own measurements on other models; nothing in this
+record reproduces them, and the steeper of the two claims (over 99% overlap accuracy) comes from a
+hardware design study whose execution model this engine does not share. The twin counts reads, not
+in-flight joins, evictions by wasted reservations or GPU time, so a twin projection is not a claim.
+Every arm here changes only which bytes are staged and when; the native router still chooses the
+experts that execute, and no arm may change outputs.
+
+## Registration
+
+This record needs its own pre-registration, written before the step-1 capture, naming the feature
+list, the three families, their hyperparameter search space, the train/validation split and the exact
+gates, in the pattern of `.build/expert-lookahead/xla3-*`. Step 4's contention rule and step 5's
+prompt draw are the ones already registered for the forecast program; reuse them verbatim rather than
+restating them.
+
+## Tree verification for the GDN hybrid: accepted tokens per verify pass
+Opened on 2026-09-26 from the closing state of [[records/plan/decode-forecast-taps-2026-09-14]] – decode
+is about 64% GPU compute of verify passes at about 2.1 accepted tokens per pass, and acceptance per pass
+is named there as the next lever outside the forecast – and from
+[[sources/references/2026/09/2026-09-26-gdn-tree-scan]], prior art for exactly this lever on the same
+model family.
+
+## Problem
+
+Speculation here is a single chain at the adopted draft depth of two, verified in one target forward
+pass, with a measured pass-cost ratio of 1.65 when every expert is resident
+([[records/plan/decode-forecast-taps-2026-09-14]]). A tree verifies several candidate continuations in
+the same forward pass, so it raises committed tokens per pass without changing what "accepted" means.
+
+The difficulty is specific to this model's layers. For an attention-only transformer the verifier needs
+an ancestry mask and nothing else; for a recurrent-hybrid model a candidate row must also carry the
+recurrent state that native sequential decode would have produced along its root-to-node path, or the
+verifier can use a correct mask and still condition on an impossible history. This engine's linear
+layers are Gated-DeltaNet with per-position recording (`LinearCache.record`) and
+`State.rollback(keeping:of:from:ngramWindow:)`, so the machinery for branch-local state exists, but it
+has never been exercised by more than one chain.
+
+There is a second, engine-specific cost the paper's setting does not share: widening verification
+activates the union of the experts the tree routes to, and this engine streams experts from the SSD.
+Accepted tokens per pass is therefore only half the gate; expert bytes per committed token is the other
+half. The paper's +27% is on a different model, a different engine and a clean batch-one gate, and its
+equivalence evidence is scoped to a probability-rescore closure rather than a distribution-distance
+proof; none of it transfers as a number.
+
+## Steps, in dependency order
+
+1. Offline shape and acceptance model, no engine change. From the recorded per-position linear states
+   and the frozen pilot prompts, compute for candidate trees (node budgets 4 and 6, branching from the
+   draft head's own logits at the adopted depth) the accepted chain length and the routed-expert union
+   per verify pass, against the shipped chain on the same prompts. Exit: predicted committed tokens per
+   verify-forward at least 10% above the shipped chain, with predicted expert bytes per committed token
+   no worse than the shipped chain's, before any engine work. A negative reading closes the shape
+   question at the terminal and costs no model launch.
+2. Branch-local recurrent verification, correctness without timing. Each candidate row carries its own
+   linear state; verification publishes state only for the accepted chain; a rejected branch rolls back
+   to a recorded state and never re-runs kept tokens. Exit, with the tree forced on for fixed prompts:
+   the accepted chain's prompt logits equal the shipped chain's for the same accepted ids within the
+   band the shipped re-chunking already moves, `mtp-check`'s fused-versus-stepped identity still holds,
+   the `prefix-exact-check` family is unchanged, and with the tree off the ordinary path is
+   bit-identical to the shipped build.
+3. Attention and indexer composition, correctness without timing. The model's attention is sparse under
+   an indexer budget; the tree's ancestry bias must compose with the existing selection without
+   widening the attended set beyond the charged budget, and every extra row (attention KV, indexer and
+   MoE workspace) must be charged to the request's plan. Exit: measured peak inside the request target
+   with the tree on, the requested context window unchanged, and a tree whose charge does not fit is
+   refused rather than silently trimmed.
+4. Memory and refusal behavior at the floor. Exit: the 8.1 GB floor profile still runs, the ordinary
+   path is unchanged, and no tree is enabled by default.
+5. Screen and held-out confirmation under the protocols already registered for the forecast program
+   (exploration prompts at 256 outputs under the contention rule; eight unused training-split families,
+   three rounds at 512 outputs at 20 GB), with every gate stated twice: per accepted token and per
+   expert byte read.
+6. Changing the default, the draft depth this interacts with, docs and any public number are a separate
+   decision after step 5.
+
+## Limits
+
+One machine, one model checkpoint, one SSD. Step 1 is a model of acceptance, not a speed. Tree
+verification raises the number of rows per verify forward, so its memory charge grows with breadth and
+the planner's existing per-request ceilings are the binding constraint, not the GPU. The external
+result's +4.0% per-request-equal latency view means a tree can win token-weighted throughput while
+losing per-request latency; both readings must be reported, and the shipped draft depth stays two until
+a decision says otherwise.
+
+## Registration
+
+Needs its own pre-registration before step 1, naming the tree shapes, the branching rule, the prompt
+set and the two gates (tokens per pass, expert bytes per committed token) before any data exists.
+Step 2 is the first engine change and must not be merged behind a default.
+
+## The disk prefix tier: a measured load-versus-recompute admission and a queued preload
+Opened on 2026-09-26 from the persistent prefix cache's own semantics
+([[records/decisions/prefix-cache-holds-four-conversations-extend-only]],
+[[records/plan/n1-conversation-prefix-cache-kv-gdn-state-reuse-across-requests]]) and from two pieces of
+prior art recorded on the same day:
+[[sources/references/2026/09/2026-09-26-py-kvcache-external-kv-break-even]] and
+[[sources/references/2026/09/2026-09-26-kv-cache-placement-across-tiers]].
+
+## Problem
+
+The disk tier restores the saved representation and never rebuilds, memory answers first, and disk is
+read only for a state longer than memory holds, after making room like a miss. What has never been
+measured is whether that read is cheaper than not using the disk at all. Under the aligned-resume rule
+a hit is worth the distance back to the request's own pass boundary, so for a short follow-up the
+saving can be one partial pass – and for a short prefix that a partial pass would re-read in a few
+hundred milliseconds, reading a persisted state from the SSD, restoring it into buffers of the saved
+shapes, and evicting another conversation to make room can cost more than the work it saves.
+
+The prior art makes this the whole question: external KV caching is a setup-specific admission
+decision, recomputation can beat loading for short prefixes or a fast device, and much of that work's
+win came from *when* the transfer enters the schedule rather than from device bandwidth (preloading
+contributed 1.34x of a 2.0x result). The placement study is the counter-argument and belongs in this
+record's limits: in its setting the gains came from tier capacities, not placement, and prefetching did
+not justify its bandwidth cost.
+
+## Steps, in dependency order
+
+1. Cost model from existing evidence, no engine change and no model launch. For the turns the store
+   already records, resolve both arms per candidate state: (a) the disk read plus restore cost of the
+   persisted state, and (b) the re-prefill cost from the request's last aligned pass boundary to the
+   same length. Both are already instrumented in the prefix and disk receipts. Exit: a fitted model of
+   both arms over recorded turns, reported with its residual and its fitted range, with no hardcoded
+   length threshold anywhere in the engine.
+2. Admission in the cache. Per candidate state, choose the cheaper arm using step 1's measured
+   constants, leaving the aligned-resume rule, the four-conversation ceiling, the shared-token ceiling
+   and the miss-eviction order unchanged. Exit: `optimization-state-check --variant
+   persistent-prefix[-mtp]` still bit-matches a memory hit, `Tools/persistent_prefix_e2e.py` still
+   passes, and a gate asserts the decision is computed from the measured constants and flips when they
+   flip.
+3. Queued preload, bounded. Start the disk read while an accepted request waits for its guards or is
+   queued, inside the existing staging and reservation accounting, cancelled and drained on failure or
+   cancellation, with no reader pinned past the request's ownership. Exit: process footprint at the
+   target unchanged, no read issued for a request that never proceeds, cancellation drains workers, and
+   a rejected or timed-out request leaves no partial state visible to the next request.
+4. Paired A/B on the two workloads this store already uses: agent short turns (many short follow-ups)
+   and a long first turn. Exit: identical outputs, aggregate at least 1.02 with the lower bootstrap
+   bound above 1.00, no family median below 0.97 on the short-turn family, and no long-turn duration
+   regression above 2%. A reading that favours recomputation everywhere is a legitimate outcome: this
+   record then closes by recording that the disk tier is not the lever for short prefixes, and the tier
+   keeps serving only the long states it serves today.
+5. Changing a default, the docs and any public number are a separate decision after step 4.
+
+## Limits
+
+One machine and one internal SSD: the break-even point is a property of this disk, this model's pass
+structure and the current planner, and it must be re-derived, not carried, on any other machine. The
+placement study's negative prefetch result is from PCIe-attached tiers with GPU HBM and a simulated
+execution model, so it does not transfer to reading a local SSD into unified memory; its capacity-over-
+placement finding is the reason step 1 measures admission rather than a new placement policy. Steps 1
+and 2 add no read traffic; only step 3 does, and it is the step the placement study argues against, so
+it runs last and on its own registration.
+
+## Registration
+
+Needs its own pre-registration before step 1's fit, naming the recorded turns used, the two cost
+estimators, the residual bound and the admission rule, before any A/B exists.
+
 ### M9 design note — MTP self-speculative decode: when it pays, and when experts win
 
 Not built in v0, and the pinned community conversion drops the MTP tensors

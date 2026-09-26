@@ -2100,3 +2100,27 @@ The elastic drill FAIL on the 34 GB Air is an arena limit: a 1.75 GB round trip 
 ## [2026-09-26 06:42] update | sources/runs/2026/09/2026-09-26-full-acceptance-battery-34gb.md
 Full acceptance battery on the 34 GB Air: passed 30, failed 3, the four current-backend parity gates green after installing the .venv reference; the drill FAIL is the traced arena limit and the other two reds are headroom skips
 
+## [2026-09-26 08:18] create | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
+new queue-item from the 2026-09-26 external survey: registered steps, exit gates and limits; no measurement claimed
+
+## [2026-09-26 08:18] create | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
+new queue-item from the 2026-09-26 external survey: registered steps, exit gates and limits; no measurement claimed
+
+## [2026-09-26 08:18] create | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+new queue-item from the 2026-09-26 external survey: registered steps, exit gates and limits; no measurement claimed
+
+## [2026-09-26 08:18] create | sources/references/2026/09/2026-09-26-gdn-tree-scan.md
+prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not reproduced here
+
+## [2026-09-26 08:18] create | sources/references/2026/09/2026-09-26-pre-attention-expert-prediction.md
+prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not reproduced here
+
+## [2026-09-26 08:18] create | sources/references/2026/09/2026-09-26-apex-adaptive-expert-prefetching.md
+prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not reproduced here
+
+## [2026-09-26 08:18] create | sources/references/2026/09/2026-09-26-py-kvcache-external-kv-break-even.md
+prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not reproduced here
+
+## [2026-09-26 08:18] create | sources/references/2026/09/2026-09-26-kv-cache-placement-across-tiers.md
+prior art recorded verbatim-in-summary from the arXiv API; authors' numbers, not reproduced here
+
