@@ -2166,3 +2166,9 @@ step 0 probe and step 1 shape model executed: negative (trees buy 0.044 accepted
 ## [2026-09-26 12:26] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
 corrected the disposition: the registered G1 reads a bound, tree-6's 11.4% is a go and tree-4's 5.8% fails; the cost evidence is a prior against step 2, not a gate failure, so status returns to open pending a decision
 
+## [2026-09-26 13:00] update | records/plan/2026-09-26-tree-verification-gdn-hybrid.md
+Carlos decided: do not build step 2; the record is withdrawn on the cost evidence (see records/decisions/tree-verification-is-not-built-2026-09-26) and the program moves to order 344
+
+## [2026-09-26 13:14] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+step 0 done: the three scalars populate, the persistent-prefix equivalence gate passes, and a 4352-token restore costs 0.043-0.062 s while leaving 927 tokens to re-read and evicting two conversations; e2e bookkeeping checks are stale, not a regression
+

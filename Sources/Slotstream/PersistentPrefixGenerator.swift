@@ -25,6 +25,18 @@ public struct PersistentPrefixObservation: Codable, Equatable, Sendable {
     public var sharedSavedTokens = 0
     public var sharedSaveSeconds = 0.0
     public var sharedSaveBytes: Int64 = 0
+    /// What the in-memory set offered this request before the disk tier was
+    /// consulted. Recorded whether or not a disk state was taken, because the
+    /// recompute arm's distance back to the request's own boundary is measured
+    /// against it; zero means memory retained nothing for this prompt.
+    public var memoryOfferedTokens = 0
+    /// On a restore, the prompt tokens the request still reads for itself after
+    /// the restored state. The disk arm's residual; zero when nothing was
+    /// restored, where the whole prompt was read.
+    public var residualPrefillTokens = 0
+    /// Conversation states evicted to make room for this restore. A restore
+    /// that buys time by evicting another conversation is not free.
+    public var evictionsForRestore = 0
     public init() {}
 
     /// Statistics written by 0.2.18 to 0.2.20 have no shared-prefix fields,
@@ -46,6 +58,9 @@ public struct PersistentPrefixObservation: Codable, Equatable, Sendable {
         sharedSavedTokens = try c.decodeIfPresent(Int.self, forKey: .sharedSavedTokens) ?? 0
         sharedSaveSeconds = try c.decodeIfPresent(Double.self, forKey: .sharedSaveSeconds) ?? 0
         sharedSaveBytes = try c.decodeIfPresent(Int64.self, forKey: .sharedSaveBytes) ?? 0
+        memoryOfferedTokens = try c.decodeIfPresent(Int.self, forKey: .memoryOfferedTokens) ?? 0
+        residualPrefillTokens = try c.decodeIfPresent(Int.self, forKey: .residualPrefillTokens) ?? 0
+        evictionsForRestore = try c.decodeIfPresent(Int.self, forKey: .evictionsForRestore) ?? 0
     }
 }
 
@@ -88,13 +103,19 @@ extension Generator {
         // A state saved at one of this prompt's own pass boundaries is the
         // state this request would have read; any other length is refused for
         // the same reason an in-memory conversation entry is.
+        // Recorded before the candidate is chosen, so a request the disk tier
+        // refuses still says what memory offered it: that is the recompute
+        // arm's distance, and it never reached statistics before.
+        var observation = stats.persistentPrefix ?? PersistentPrefixObservation()
+        observation.memoryOfferedTokens = retained
+        defer { stats.persistentPrefix = observation }
         guard let entry = tier.candidate(extending: promptIds, longerThan: retained, requireDraft: draft,
             boundaries: resume?.boundaries, prefillChunk: resume?.key.prefillChunk)
         else { return nil }
-        var observation = stats.persistentPrefix ?? PersistentPrefixObservation()
-        defer { stats.persistentPrefix = observation }
+        let evictionsBefore = cache.evictions
         cache.reserveForRestore(promptTokens: promptIds.count, reserveTokens: reserveTokens,
             reserveSequenceBytes: reserveSequenceBytes, restoredSequenceBytes: entry.sequenceBytes)
+        observation.evictionsForRestore = cache.evictions - evictionsBefore
         do {
             if let request, try request.chooseAllocation(preferredBytes: entry.residentBytes, fallbackBytes: 0,
                     phase: "persistent prefix restore") == false {
@@ -107,6 +128,7 @@ extension Generator {
             observation.restoredTokens = result.tokens
             observation.restoreSeconds = result.seconds
             observation.restoreBytes = result.bytes
+            observation.residualPrefillTokens = max(0, promptIds.count - result.tokens)
             return result
         } catch {
             observation.restoreFailure = "\(error)"

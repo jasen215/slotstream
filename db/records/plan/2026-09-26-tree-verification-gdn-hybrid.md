@@ -2,16 +2,16 @@
 type: plan
 id: 01m3ecpsva89kcy0xe2x445256
 created: 2026-09-26T08:18:32.938619+00:00
-updated: 2026-09-26T12:26:58.852778+00:00
+updated: 2026-09-26T13:00:36.650880+00:00
 summary: 'Tree verification for the GDN hybrid: accepted tokens per verify pass'
 date: 2026-09-26
 doc: plan
 kind: queue-item
 level: '2'
-note: 'Step 1 measured: tree-6''s lower bound clears the +10% screen and tree-4''s does not, but the registered cost ladder puts tree-6 at about double a chain pass, so step 2 is waiting on an explicit decision rather than a gate.'
+note: 'Closed 2026-09-26 by decision on the measured cost evidence (not by a gate failure): tree-6''s lower bound clears the +10% screen but costs about twice a chain pass. Steps 2 to 5 stay unexecuted.'
 order: '343'
 title: 'Tree verification for the GDN hybrid: accepted tokens per verify pass'
-status: open
+status: withdrawn
 ---
 Opened on 2026-09-26 from the closing state of [[records/plan/decode-forecast-taps-2026-09-14]] – decode
 is about 64% GPU compute of verify passes at about 2.1 accepted tokens per pass, and acceptance per pass

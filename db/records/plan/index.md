@@ -2,13 +2,13 @@
 type: index
 scope: type-folder
 folder: records/plan
-updated: 2026-09-26T12:26:58.852778Z
+updated: 2026-09-26T13:14:25.124956Z
 ---
 
 # records/plan
 
-- [[records/plan/2026-09-26-tree-verification-gdn-hybrid]] — Tree verification for the GDN hybrid: accepted tokens per verify pass
 - [[records/plan/2026-09-26-disk-prefix-tier-break-even]] — The disk prefix tier: a measured load-versus-recompute admission and a queued preload
+- [[records/plan/2026-09-26-tree-verification-gdn-hybrid]] — Tree verification for the GDN hybrid: accepted tokens per verify pass
 - [[records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision]] — Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate
 - [[records/plan/12-open-questions-answer-at-the-milestone-noted]] — 12. Open questions (answer at the milestone noted)
 - [[records/plan/decode-forecast-taps-2026-09-14]] — A more accurate expert forecast at the same lead time: attention taps, a learned correction and three closed levers, each registered and gated; the corrected tap ships in 0.2.19

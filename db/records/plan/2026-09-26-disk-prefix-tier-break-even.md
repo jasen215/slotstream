@@ -2,7 +2,7 @@
 type: plan
 id: 01m3ecpsw8ezyhykv7ts5qcq22
 created: 2026-09-26T08:18:32.968493+00:00
-updated: 2026-09-26T12:02:30.054655+00:00
+updated: 2026-09-26T13:14:25.124956+00:00
 summary: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 date: 2026-09-26
 doc: plan
@@ -46,6 +46,18 @@ not justify its bandwidth cost.
    `prefillTokens` merges the resumed and re-read tokens, and what memory offered never leaves a log
    line. Exit: with the tier off the ordinary statistics are byte-identical to the shipped build's, and
    where a value appears both in a log line and in a statistic the two agree.
+
+   **Outcome, 2026-09-26: done.** `optimization-state-check --variant persistent-prefix --tokens 2051`
+   reports `passed: true` with every item green, so a restored state still equals a memory hit bit for
+   bit and the new fields changed no arithmetic. The scalars populate: over six turns of one
+   conversation on a fresh tier, memory offered 3840 on turn 2 and the request took nothing from disk,
+   while turn 3 restored 4352 tokens in 0.043 to 0.062 s, still had to read 927 tokens itself, and on
+   the first server evicted two conversations to do it. `Tools/persistent_prefix_e2e.py` passes every
+   id-equality check and fails five bookkeeping checks that assert one persisted head per turn: turn 1
+   also writes a shared prefix head (`sharedSaveOutcome "saved"`, 3584 tokens), so two heads after turn
+   1 is the engine's design, the tool's expectation predates shared prefixes and it is not a CI gate.
+   Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-step0-scalars]]. Step 1, the two-armed fit,
+   is next and its input now exists.
 1. Cost model from existing evidence, no engine change and no model launch. For the turns the store
    already records, resolve both arms per candidate state: (a) the disk read plus restore cost of the
    persisted state, and (b) the re-prefill cost from the request's last aligned pass boundary to the

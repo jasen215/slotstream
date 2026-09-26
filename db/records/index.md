@@ -2,14 +2,14 @@
 type: index
 scope: layer
 folder: records
-updated: 2026-09-26T12:27:03.754296Z
+updated: 2026-09-26T13:14:25.124956Z
 ---
 
 # records
 
 - [[records/analyses/index|Analyses]] (3)
 - [[records/claims/index|Claims]] (142) — every number on a public surface, with the measurement that supports it and the gate that guards it
-- [[records/decisions/index|Decisions]] (46) — what was decided, on which evidence, and what would reverse it
+- [[records/decisions/index|Decisions]] (47) — what was decided, on which evidence, and what would reverse it
 - [[records/design/index|Design]] (31) — PLAN.md's design sections: goal, ground truth, byte math, architecture, correctness strategy, references
 - [[records/machines/index|Machines]] (7) — the machines measurements ran on
 - [[records/measurements/index|Measurements]] (170) — every MEASUREMENTS.md section as a record: what was measured, how, on which machine, and whether it still stands

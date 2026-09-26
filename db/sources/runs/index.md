@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/runs
-updated: 2026-09-26T12:26:17.783898Z
+updated: 2026-09-26T13:14:25.063813Z
 ---
 
 # sources/runs
 
+- [[sources/runs/2026/09/2026-09-26-disk-prefix-step0-scalars]] — memoryOfferedTokens, residualPrefillTokens and evictionsForRestore recorded per request; the equivalence gate passes and a 4352-token restore cost 0.043-0.062 s while still leaving 927 tokens to read
 - [[sources/runs/2026/09/2026-09-26-tree-verification-step0-probe]] — Draft head top-k recorded at the probe's argmax line; the ranks do not perturb the chain, and the shape model shows both tree shapes lose throughput
 - [[sources/runs/2026/09/2026-09-26-xla4-form-capture-and-fits]] — Protocol xla4-form-20260926: observer-only feature capture and the three forecast-form fits
 - [[sources/runs/2026/09/2026-09-26-full-acceptance-battery-34gb]] — The full acceptance battery on the 34 GB Air after the current-backend reference environment landed: passed 30, failed 3, all four parity gates green, and two of the three reds are headroom skips
@@ -506,9 +507,8 @@ updated: 2026-09-26T12:26:17.783898Z
 - [[sources/runs/2026/09/2026-09-06-optimization-c07-source-integration]] — Bounded prefill integration and prompt-cache epoch correction — V183–184
 - [[sources/runs/2026/09/2026-09-06-configurable-context-external-consumer-deprecation-counterexample]] — External Swift consumer compiles but strict warning gate exposes deprecated stride metadata
 - [[sources/runs/2026/09/2026-09-06-configurable-context-actual-32k-client-contracts]] — Actual Ollama and AI SDK clients pass at32K; Hermes enforces its64K minimum
-- [[sources/runs/2026/09/2026-09-06-optimization-probe-review-and-pressure-recovery]] — Optimization probe preflight review and typed pressure recovery — V181–182
 
 ## More
 
-This folder has 687 files. The 500 most recent are listed above.
+This folder has 688 files. The 500 most recent are listed above.
 Use `dbmd query --type run --in sources` for the complete catalog.

@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/decisions
-updated: 2026-09-23T18:14:44.276641Z
+updated: 2026-09-26T13:00:36.591043Z
 ---
 
 # records/decisions
 
+- [[records/decisions/tree-verification-is-not-built-2026-09-26]] — Order 343 stops after its offline shape model: both tree shapes lose throughput at the adopted depth, with the token screen met only by tree-6 and the cost ladder against it
 - [[records/decisions/sevra-live-folder-navigation]] — Live folder access with bounded navigation, reliable search cursors and fresh-read edit checks
 - [[records/decisions/sevra-app-speed-defaults-2026-09-23]] — Enable qualified desktop speedups without extra user switches
 - [[records/decisions/automatic-prefill-read-policy]] — Apply supported prefill improvements automatically
