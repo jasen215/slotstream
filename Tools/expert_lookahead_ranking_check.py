@@ -93,8 +93,10 @@ def check_intent(arm):
     rk.TOPK = 3
     got = rk.train_arm(x, p, z, routes, xv, p[:100], rv, arm, 3e-3, 0.0, H, 40, 64, 1729)
     first, last = got["history"][0], got["history"][-1]
-    base = float(rk.learned.agreement_sum(p[:100], rv))
-    assert last["validation_agreement"] > base + 0.3, (last, base)
+    base = float(rk.learned.agreement_sum(p[:100], rv)) / 100   # agreement_sum returns a sum
+    # Chance agreement is not 0 here: with top-3 of 6 experts a random set already hits about half
+    # the true experts, so the bar is both a clear margin over that and a high absolute level.
+    assert last["validation_agreement"] > max(base + 0.2, 0.75), (last, base)
     assert last["train_loss"] < first["train_loss"], (first, last)
     print(f"intent ok ({arm}): tap {base:.3f} -> {last['validation_agreement']:.3f} "
           f"(loss {first['train_loss']:.4f} -> {last['train_loss']:.4f}, epoch {got['epoch']})")

@@ -2136,3 +2136,15 @@ read in full from the v1 source package: precise architectures 1 and 2, the 3.0/
 ## [2026-09-26 09:01] update | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
 amendment 2 before the fit: arms implemented in Tools/expert_lookahead_ranking.py (sha256 f82ee69f), hidden 128 for parameter parity, and gate G2/G3 recorded as not evaluable from an observer-only capture (needs a residency capture)
 
+## [2026-09-26 11:16] update | sources/runs/2026/09/2026-09-26-xla4-form-capture-and-fits.md
+capture 69/69 after one memory-pressure resume (exit 1 then exit 0); three fits and the compare table
+
+## [2026-09-26 11:16] update | records/measurements/expert-lookahead-ranking-forms-2026-09-26.md
+negative: ranking-aware forms 0.7663/0.7672 against the shipped ridge's re-derived 0.8028 at equal lead time, parameters and memory
+
+## [2026-09-26 11:16] update | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
+step 1 outcome recorded: negative, ranking-aware forms lose 3.6 points to the shipped ridge correction; the family question closes and the shipped tap stays; G2/G3 remain unevaluated
+
+## [2026-09-26 11:16] update | records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision.md
+corrected: the body carried four copies of the record's own frontmatter (FM_IN_BODY) from whole-file body writes; rebuilt the body from the last copy, content unchanged
+

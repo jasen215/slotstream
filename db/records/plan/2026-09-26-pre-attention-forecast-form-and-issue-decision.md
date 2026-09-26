@@ -2,35 +2,7 @@
 type: plan
 id: 01m3ecpstcm5j7raghq0st14gj
 created: 2026-09-26T08:18:32.908050+00:00
-updated: 2026-09-26T09:01:19.141709+00:00
-summary: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
-date: 2026-09-26
-doc: plan
-kind: queue-item
-level: '2'
-order: '342'
-title: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
-status: open
----
----
-type: plan
-id: 01m3ecpstcm5j7raghq0st14gj
-created: 2026-09-26T08:18:32.908050+00:00
-updated: 2026-09-26T08:30:29.419831+00:00
-summary: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
-date: 2026-09-26
-doc: plan
-kind: queue-item
-level: '2'
-order: '342'
-title: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
-status: open
----
----
-type: plan
-id: 01m3ecpstcm5j7raghq0st14gj
-created: 2026-09-26T08:18:32.908050+00:00
-updated: 2026-09-26T08:26:39.349155+00:00
+updated: 2026-09-26T11:16:42.652259+00:00
 summary: 'Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate'
 date: 2026-09-26
 doc: plan
@@ -79,7 +51,19 @@ family is closed and leave only the issue decision, or close both.
    more wasted reads, within 64 MiB of FP16 weights, before any native code. The features come from this protocol's own
    observer-only capture, because the predecessor `xla3-learned-20260915` shards are no longer on
    disk; one capture therefore runs before the fit (about 56 minutes and 7.9 GB of shards for the
-   pilot's 69 requests), while no training or evaluation step loads the model.
+   pilot's 69 requests), while no training or evaluation step loads the model. Outcome, 2026-09-26:
+   **negative, and the predictor-family question closes.** On 142,968 pooled validation rows over
+   targets 2 to 47, the shipped rank-128 ridge correction re-derived at 0.8028, the rank-128 ranking
+   arm read 0.7663 and the two-linear-layer ranking arm 0.7672 -- both about 3.6 points below the
+   reference and 8.6 points below the gate. Their FP16 weights are 35.30 and 35.31 MiB against the
+   shipped 35.25, and all forms were scored on identical rows and splits. Gate G1 failed, so the
+   pre-registered negative rule applies and the shipped tap and its correction stay. The two
+   ranking arms stopped early (best epoch 3 to 12) on 12,195 training rows per layer, so the deficit
+   is measured at this data volume, not at the paper's 10M samples. G2 and G3 could not be evaluated:
+   this protocol's capture is observer-only and carries no residency timeline, which the registration
+   records as an execution gap. Evidence:
+   [[records/measurements/expert-lookahead-ranking-forms-2026-09-26]] and
+   [[sources/runs/2026/09/2026-09-26-xla4-form-capture-and-fits]].
 2. Issue decision, offline. From the same capture, record per issued candidate its confidence feature,
    whether its read was adopted, and whether it arrived before use. Fit a calibrated confidence model
    to decide issue/adopt in place of the fixed margin. Exit: at the shipped read traffic, adopted and

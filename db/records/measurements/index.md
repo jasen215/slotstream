@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/measurements
-updated: 2026-09-24T12:18:57.749194Z
+updated: 2026-09-26T11:16:06.540711Z
 ---
 
 # records/measurements
 
+- [[records/measurements/expert-lookahead-ranking-forms-2026-09-26]] — Two ranking-aware pre-attention predictor forms, at the shipped lead time and parameter count, score 0.7663 and 0.7672 against the shipped rank-128 ridge correction's re-derived 0.8028
 - [[records/measurements/shared-prefix-boundary-upgrade-2026-09-23]] — A shared prefix at a prompt's own resume boundary: the head is upgraded, and the gate that fails without it
 - [[records/measurements/shared-prefix-live-acceptance-2026-09-24]] — A live serve process on the fixed build: a shared prefix colliding with a conversation checkpoint is upgraded, reused by another conversation, kept by a deeper save and restored across a restart
 - [[records/measurements/sevra-app-optimizations-2026-09-23]] — Sevra desktop defaults: MTP, useful checkpoints and verified reloads

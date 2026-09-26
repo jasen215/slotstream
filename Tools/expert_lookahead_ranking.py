@@ -168,8 +168,10 @@ def train_arm(x_tr, p_tr, z_tr, r_tr, x_va, p_va, r_va, arm, lr, wd, hidden, epo
             adam_step(params, g, state, lr, wd, step)
             total += float(objective(s, z_tr[idx], weight[idx], positive[idx], top[idx])[0]) * len(idx)
         # `learned.agreement_sum` is the frozen fit's own metric, kept so the arms are comparable; it
-        # reads that module's TOPK, which is the same 10 as here. Change the two together.
-        val = float(learned.agreement_sum(p_va + forward(params, arm, x_va), r_va))
+        # reads that module's TOPK, which is the same 10 as here, and returns a *sum* over rows (the
+        # frozen fit only ever compares folds of equal size). Divide here so every reported and
+        # selected value is an agreement fraction.
+        val = float(learned.agreement_sum(p_va + forward(params, arm, x_va), r_va)) / max(len(r_va), 1)
         best["history"].append(dict(epoch=epoch, train_loss=total / len(x_tr), validation_agreement=val))
         if log_layer:
             log_layer(epoch, total / len(x_tr), val)
@@ -254,7 +256,7 @@ def cmd_fit(args):
                   layers=layers, validation_pooled=pooled,
                   gain_over_tap=pooled["arm"]["top10_agreement"] - pooled["tap"]["top10_agreement"],
                   per_layer_parameters=int(params_per_layer),
-                  fp16_weight_mib=float(params_per_layer * LAYERS * 2 / 2**20),
+                  fp16_weight_mib=float(params_per_layer * len(TARGETS) * 2 / 2**20),
                   duplicate_forms=True,
                   duplicate_forms_note=("this run trains one form, so ids_full and ids_rank carry the same "
                                         "forecasts; the twin's two codes are identical here by construction"),
@@ -265,7 +267,7 @@ def cmd_fit(args):
     for name, s in pooled.items():
         print(f"{name:8s} {s['rows']:8d} {s['top10_agreement']:7.4f} {s['exact_top10']:7.4f} {s['recall16']:7.4f} {s['recall24']:7.4f}")
     print(f"gain over tap {report['gain_over_tap']:+.4f}; {params_per_layer:,} parameters/layer, "
-          f"FP16 {report['fp16_weight_mib']:.1f} MiB of {LAYERS} layers")
+          f"FP16 {report['fp16_weight_mib']:.2f} MiB over {len(TARGETS)} target layers")
 
 
 def cmd_compare(args):
@@ -278,7 +280,7 @@ def cmd_compare(args):
             if name in fit.get("validation_pooled", {}):
                 s = fit["validation_pooled"][name]
                 rows.append(dict(fit=Path(path).name, form=name, rows=s["rows"], top10=s["top10_agreement"],
-                                 exact=s["exact_top10"], recall16=s["recall16"], recall24=s["recall24"]))
+                                 exact=s["exact_top10"], rec16=s["recall16"], rec24=s["recall24"]))
     if not rows:
         raise SystemExit("no fit.json found under: " + ", ".join(args.fits))
     print(f"{'fit':22s} {'form':6s} {'top10':>7s} {'exact':>7s} {'rec16':>7s} {'rec24':>7s}")
