@@ -1,16 +1,16 @@
 ---
 type: index
 scope: root
-updated: 2026-09-26T13:17:39.522401Z
+updated: 2026-09-26T13:39:40.091525Z
 ---
 
 # Knowledge base index
 
-## Sources (704)
+## Sources (708)
 - [[sources/community/index|Community]] (3) — measurement reports from other people's Macs, verbatim
-- [[sources/docs/index|Docs]] (6) — frozen snapshots of the documents the records were lifted from
+- [[sources/docs/index|Docs]] (9) — frozen snapshots of the documents the records were lifted from
 - [[sources/references/index|References]] (6) — vendor documentation and prior art cited by measurements and design
-- [[sources/runs/index|Runs]] (689) — raw tool output captured before a number was transcribed
+- [[sources/runs/index|Runs]] (690) — raw tool output captured before a number was transcribed
 
 ## Records (432)
 - [[records/analyses/index|Analyses]] (3)

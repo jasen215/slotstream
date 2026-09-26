@@ -6642,6 +6642,25 @@ not justify its bandwidth cost.
    persistent-prefix[-mtp]` still bit-matches a memory hit, `Tools/persistent_prefix_e2e.py` still
    passes, and a gate asserts the decision is computed from the measured constants and flips when they
    flip.
+
+   **Outcome, 2026-09-26: rewritten and done, with the rule the evidence supports rather than the
+   one first written.** Step 1's negative result replaced "choose the cheaper arm from a fitted
+   per-token read cost" with two wins that are real in the measured data: the restore removes a pass
+   of reading (a removed pass is worth about a second, since 25 rows cost 1.07 to 1.79 s against 3.6k
+   rows at 21 to 52 s), or the rows it saves pay for its own restore at the cheapest re-read ever
+   measured (0.42 ms per row on a fully resident pool, against a fitted restore of
+   `0.0213 + 3.946e-06 * rows`). `PersistentPrefixAdmission.takesDiskState` is a pure function of the
+   schedule and those two constants; no bespoke threshold entered the engine. The registration was
+   revised twice before any gate ran — pass counts alone collapse under a tail-aware schedule, rows
+   alone give up a small saving that crosses a pass boundary — and revision 3 records both rejected
+   forms and why. Exits: `slotstream-checks --tier t0 --filter persistent-prefix` PASS with 132
+   assertions (nine on the rule), `optimization-state-check --variant persistent-prefix --tokens 2051`
+   `passed: true`, and `Tools/persistent_prefix_e2e.py` 12 of 12 after its bookkeeping checks were
+   corrected to the shared-prefix accounting they predated — the correction is part of this step
+   because that tool is named as an exit. On a real conversation the rule kept every restore it met;
+   turn 3 of the first server saved 512 rows, restored in 0.0932 s against the fitted 0.0385 s, and
+   evicted two conversations to do it, which is the co-primary now recorded beside every restore.
+   Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-step2-admission]].
 3. Queued preload, bounded. Start the disk read while an accepted request waits for its guards or is
    queued, inside the existing staging and reservation accounting, cancelled and drained on failure or
    cancellation, with no reader pinned past the request's ownership. Exit: process footprint at the
@@ -6662,9 +6681,10 @@ structure and the current planner, and it must be re-derived, not carried, on an
 placement study's negative prefetch result is from PCIe-attached tiers with GPU HBM and a simulated
 execution model, so it does not transfer to reading a local SSD into unified memory; its capacity-over-
 placement finding is the reason step 1 measures admission rather than a new placement policy. Step 1's
-negative result leaves this plan open with steps 2 to 5 unshaped rather than withdrawn: the question it
-answered is real but its threshold is a pass count, and the eviction a restore causes — invisible until
-step 0 — is the co-primary that a pass-count rule has to be judged against. Steps 1
+negative result left this plan open and step 2 was rewritten and completed on 2026-09-26 on the two
+wins the evidence supports; the eviction a restore causes — invisible until step 0 — is recorded
+beside every restore as the co-primary, and step 3's queued preload is the one step the placement
+study's negative prefetch result still argues against. Steps 1
 and 2 add no read traffic; only step 3 does, and it is the step the placement study argues against, so
 it runs last and on its own registration.
 

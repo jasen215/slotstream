@@ -351,13 +351,24 @@ def main():
         p1, p2, p3 = first_1["persistent"], first_2["persistent"], first_3["persistent"]
         pr, pg = restart_3["persistent"], regenerate_3["persistent"]
         files = result["files"]
+        # The accounting is the shared-prefix one: a turn that starts a
+        # conversation writes a shared head and its own state head, so turn 1
+        # leaves two heads and later turns add one state while replacing their
+        # own ancestor. A state written in the same turn as the shared head it
+        # descends from references that head's rows, so reusedBytes is not zero
+        # on turn 1. These checks asked for exactly two heads after turn 2 and
+        # turn 3, which is the pre-shared-prefix accounting; they failed from
+        # 2026-09-26 for that reason and not because the engine regressed.
         checks = {
-            "turn 1 wrote its whole state": p1.get("saveOutcome") == "saved" and not p1.get("reusedBytes"),
-            "turn 2 wrote only its new rows": p2.get("saveOutcome") == "saved" and (p2.get("reusedBytes") or 0) > 0
-                and (p2.get("saveBytes") or 0) < (p1.get("saveBytes") or 0),
-            "turn 2 kept the turn-1 state as its parent": files["after_turn_2"]["heads"] == 2,
-            "turn 3 removed the turn-1 state and kept turn 2": p3.get("saveOutcome") == "saved"
-                and files["after_turn_3"]["heads"] == 2,
+            "turn 1 wrote a shared prefix and its own state": p1.get("saveOutcome") == "saved"
+                and p1.get("sharedSaveOutcome") == "saved" and (p1.get("sharedSavedTokens") or 0) > 0,
+            "turn 2 wrote its state reusing the rows it descends from": p2.get("saveOutcome") == "saved"
+                and (p2.get("reusedBytes") or 0) > 0
+                and (p2.get("savedTokens") or 0) > (p1.get("savedTokens") or 0),
+            "turn 2 left the shared head and both conversation states": files["after_turn_2"]["heads"] == 3,
+            "turn 3 replaced the turn-1 state and kept turn 2": p3.get("saveOutcome") == "saved"
+                and files["after_turn_3"]["heads"] == 3
+                and (p3.get("savedTokens") or 0) > (p2.get("savedTokens") or 0),
             "a restarted server restored the turn-2 state from its segments":
                 pr.get("restoredTokens", 0) > 0 and pr.get("restoredTokens") == p2.get("savedTokens"),
             "restart turn-3 prompt ids equal the first server's": restart_3["prompt_ids"] == first_3["prompt_ids"],
@@ -370,7 +381,7 @@ def main():
             "a restarted server regenerating turn 3 restored the kept parent or deeper":
                 pg.get("restoredTokens", 0) >= (p2.get("savedTokens") or 0) > 0,
             "regenerated turn-3 output ids equal the first server's": regenerate_3["output_ids"] == first_3["output_ids"],
-            "prefix-cache lists both states of the snapshot": len(listing.get("states", [])) == 2
+            "prefix-cache lists the shared head and both conversation states": len(listing.get("states", [])) == 3
                 and listing.get("in_use") is False,
             "prefix-cache --clear empties a copy": (removed.get("removed_files") or 0) >= 3
                 and not emptied.get("states") and emptied.get("segments") == 0,

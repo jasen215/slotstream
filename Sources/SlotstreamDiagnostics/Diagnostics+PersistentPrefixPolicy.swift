@@ -114,6 +114,35 @@ extension Diagnostics {
             PrefillSchedule.automaticScopeChoices(remaining: 3600, at: 0, maxChunk: 256, checkpoint: 2816)?.first,
             Array(repeating: 256, count: 11))
 
+        // Admission (order 344 step 2, pre-registration rev 3): a longer state
+        // is read only when it removes a pass of reading, or when the rows it
+        // saves pay for its own restore at the cheapest re-read cost measured.
+        typealias Admission = PersistentPrefixAdmission
+        c.expect("a state that removes a pass of reading is taken even when it saves fewer rows than a pass",
+            Admission.takesDiskState(memoryHeld: 4000, diskHolds: 4096, prompt: 5120, chunk: 256, tailAware: false))
+        c.expect("and it is the pass count that drops, not the row count",
+            Admission.passes(from: 4096, to: 5120, chunk: 256, tailAware: false) == 4
+                && Admission.passes(from: 4000, to: 5120, chunk: 256, tailAware: false) == 5)
+        c.expect("without removing a pass, saved rows that pay for the restore still take it",
+            Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4208, prompt: 5120, chunk: 256, tailAware: false)
+                && Admission.passes(from: 4208, to: 5120, chunk: 256, tailAware: false)
+                    == Admission.passes(from: 4096, to: 5120, chunk: 256, tailAware: false))
+        c.expect("a state that saves too little and removes no pass is refused",
+            !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4150, prompt: 5120, chunk: 256, tailAware: false))
+        c.expect("a state that is not longer is refused",
+            !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4096, prompt: 5120, chunk: 256, tailAware: false)
+                && !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 3968, prompt: 5120, chunk: 256,
+                    tailAware: false))
+        c.expect("a state longer than the prompt is refused",
+            !Admission.takesDiskState(memoryHeld: 0, diskHolds: 5200, prompt: 5120, chunk: 256, tailAware: false))
+        c.expect("memory offering nothing reads a long state",
+            Admission.takesDiskState(memoryHeld: 0, diskHolds: 2048, prompt: 5120, chunk: 256, tailAware: false))
+        c.expect("a tail-aware schedule collapses the pass term and leaves the row count to decide",
+            Admission.passes(from: 4096, to: 5120, chunk: 4096, tailAware: true) == 1
+                && Admission.passes(from: 4000, to: 5120, chunk: 4096, tailAware: true) == 1
+                && Admission.takesDiskState(memoryHeld: 4000, diskHolds: 4096, prompt: 5120, chunk: 4096,
+                    tailAware: true))
+
         // Removal classes: other build, expired, one-off, parent, conversation.
         let classes = [entry("x", [1, 2, 3], used: now - 1), entry("y", [1, 2, 3, 4], used: now - 9, continued: true),
                        entry("z", [7, 7, 7], used: now - 2), entry("w", [5, 5], identity: "other", used: now),

@@ -2178,3 +2178,6 @@ measured: restoreSeconds = 21.3 ms + 3.95 ms per 1000 restored tokens (n=9, r2=0
 ## [2026-09-26 13:17] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 step 1 done: the disk arm fits tightly (21.3 ms + 3.95 ms/1000 tokens, n=9, r2=0.954) and the re-read arm's per-token fit is a negative result (r2=0.012) because its unit of cost is one 256-row pass; steps 2-5 await a decision on the re-shaped question
 
+## [2026-09-26 13:39] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+step 2 rewritten and done: admission on two wins (a removed pass, or saved rows that pay for the restore at the cheapest measured re-read cost), T0 policy gate 132 assertions, equivalence gate passed, e2e 12/12 after its stale accounting was corrected
+
