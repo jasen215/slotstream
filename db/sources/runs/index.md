@@ -2,11 +2,23 @@
 type: index
 scope: type-folder
 folder: sources/runs
-updated: 2026-09-23T06:29:30.444515Z
+updated: 2026-09-24T22:54:56.403048Z
 ---
 
 # sources/runs
 
+- [[sources/runs/2026/09/2026-09-24-release-0-2-25-published-and-installed]] — v0.2.25 published, publicly installed and accepted
+- [[sources/runs/2026/09/2026-09-24-draft-stream-landed]] — Landed streamed draft head and plain-decode lookahead: confirmation under paging, a prototype cross-check and gates
+- [[sources/runs/2026/09/2026-09-24-decode-overlap-landed]] — Landed GPU keepalive and direct demand reads: release and on/off confirmation under paging, and gates
+- [[sources/runs/2026/09/2026-09-24-decode-perf-experiments]] — Decode speed experiments: keepalive, direct demand reads, streamed draft head, plain-decode lookahead and rejected ideas
+- [[sources/runs/2026/09/2026-09-23-shared-prefix-boundary-upgrade]] — Shared prefix head upgrade: the T1 case that fails without it, and the live session where no shared save reached disk
+- [[sources/runs/2026/09/2026-09-24-shared-prefix-live-acceptance]] — The fixed build in a live serve process: a shared prefix colliding with a conversation checkpoint is upgraded, reused by another conversation, kept by a deeper save and restored across a restart
+- [[sources/runs/2026/09/2026-09-24-sevra-window-responsiveness]] — Sevra window responsiveness before and after on a long-history Home, offscreen harness, diagnostic
+- [[sources/runs/2026/09/2026-09-23-sevra-live-folder-navigation]] — Live folder navigation, reliable continuation and real-model reviewed edits
+- [[sources/runs/2026/09/2026-09-23-sevra-native-replay-growth]] — Native Sevra replay and bounded warm cache growth
+- [[sources/runs/2026/09/2026-09-23-sevra-verification-exact-mtime]] — Sevra verification rejects corruption with exact nanosecond mtime restored
+- [[sources/runs/2026/09/2026-09-23-sevra-app-optimizations]] — Sevra desktop optimization trials and real-model acceptance
+- [[sources/runs/2026/09/2026-09-23-sevra-app-speed]] — Actual Sevra development-app speed and MTP diagnostic
 - [[sources/runs/2026/09/2026-09-23-release-0-2-24-performance]] — v0.2.24 versus v0.2.23: 72 captured requests, timing claims withheld
 - [[sources/runs/2026/09/2026-09-23-release-0-2-24-published-and-installed]] — v0.2.24 published, publicly installed and accepted
 - [[sources/runs/2026/09/2026-09-22-release-calibration-long-v3]] — Eight long-prompt requests completed; cache retention and thermal limits observed, then the next round refused background GPU activity.
@@ -495,20 +507,8 @@ updated: 2026-09-23T06:29:30.444515Z
 - [[sources/runs/2026/09/2026-09-06-optimization-probe-review-and-pressure-recovery]] — Optimization probe preflight review and typed pressure recovery — V181–182
 - [[sources/runs/2026/09/2026-09-06-configurable-context-retained-functional-swap-exclusion]] — Four conversations complete and reuse exact prefixes; capacity excluded by swap activity
 - [[sources/runs/2026/09/2026-09-06-configurable-context-pressure-feasible-recovery-pass]] — Pressure cancellation and feasible admission recovery pass with fixed MTP
-- [[sources/runs/2026/09/2026-09-06-optimization-mtp-fix-and-cache-qualification]] — Optimization MTP cancellation fix and remaining cache qualification — V178–180
-- [[sources/runs/2026/09/2026-09-06-configurable-context-governor-invocation-prerequisite]] — Pressure fixture invocation stopped because its required option was missing
-- [[sources/runs/2026/09/2026-09-06-configurable-context-unchanged-adaptive-mtp-counterexample]] — Combined candidate preserves the known rejected adaptive MTP counterexample
-- [[sources/runs/2026/09/2026-09-06-configurable-context-mtp-cancellation-recovery-pass]] — MTP cancellation fix passes typed and legacy recovery on the combined candidate
-- [[sources/runs/2026/09/2026-09-06-configurable-context-mtp-cancellation-exclusivity-counterexample]] — Actual MTP cancellation exposes an exclusive stats access abort
-- [[sources/runs/2026/09/2026-09-06-configurable-context-combined-shape-and-http-pass]] — Combined V176 context candidate passes all ten shape witnesses and HTTP contracts
-- [[sources/runs/2026/09/2026-09-06-optimization-indexer-score-preparation]] — Optimization indexer score prototype and guarded contract — V177
-- [[sources/runs/2026/09/2026-09-06-optimization-context-integrated-build]] — Context ownership component integrated and weight-free gates pass
-- [[sources/runs/2026/09/2026-09-06-optimization-maximum-image-capacity-incomplete]] — Maximum-image query tiling: incomplete capacity qualification
-- [[sources/runs/2026/09/2026-09-06-configurable-context-short-tail-and-sparse-prefix-pass]] — Tiny-query shape correction passes short-tail and sparse-prefix controls
-- [[sources/runs/2026/09/2026-09-06-configurable-context-allocation-ownership-pass]] — Per-buffer allocation and aggregate request ownership pass bounded gates
-- [[sources/runs/2026/09/2026-09-06-configurable-context-floor-fixture-counterexample]] — Restored legacy batch floor exposes eight stale diagnostic expectations
 
 ## More
 
-This folder has 673 files. The 500 most recent are listed above.
+This folder has 685 files. The 500 most recent are listed above.
 Use `dbmd query --type run --in sources` for the complete catalog.

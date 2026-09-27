@@ -101,9 +101,13 @@ import Foundation
             capped.notes.contains { $0.contains("bounded by this Mac") }
                 && !capped.notes.contains { $0.contains("toward your 64.0 GB limit") })
         let small = try Planner.plan(PlanRequest(memoryLimitGB: 10, mtp: .off), on: machine)
+        // A live governor re-plans with the loaded engine's lookahead decision
+        // and charge; these inputs carry them as MemoryGovernor.inputs() does.
         var recovery = GovernorPolicy.Inputs(currentSlots: Geometry.floorSlots, availableGB: 30,
             ramGB: machine.ramGB, workingSetGB: machine.workingSetGB, ramPercent: 100,
-            secondsSincePressure: 61, secondsSinceResize: 61, memoryLimitGB: 10)
+            secondsSincePressure: 61, secondsSinceResize: 61,
+            decodeLookahead: small.decodeLookahead, lookaheadReserveBytes: small.lookaheadReserveBytes,
+            memoryLimitGB: 10)
         check("M01", "small recovery is below ordinary growth deadband",
             Geometry.gb(small.slots - Geometry.floorSlots) < 2)
         if case .resize(let slots, _) = GovernorPolicy.decide(recovery) {
@@ -121,10 +125,18 @@ import Foundation
         var startupMachine = machine; startupMachine.availableGB = 12
         let busyStart = try Planner.plan(PlanRequest(memoryLimitGB: 10, mtp: .off), on: startupMachine)
         recovery.currentSlots = busyStart.slots; recovery.memoryLimitGB = 10
+        recovery.decodeLookahead = busyStart.decodeLookahead
+        recovery.lookaheadReserveBytes = busyStart.lookaheadReserveBytes
         recovery.secondsSinceResize = nil; recovery.secondsSincePressure = nil
         check("M01", "busy startup begins below its saved ceiling", busyStart.clamped && busyStart.slots < small.slots)
+        // The busy start keeps its own lookahead decision, so the full ceiling
+        // it grows into is priced with that decision retained.
+        let ceiling = try Planner.plan(expertsPerLayer: nil, poolGB: nil, memoryGB: nil, memoryLimitGB: 10,
+            ramGB: machine.ramGB, workingSetGB: machine.workingSetGB, availableGB: machine.availableGB,
+            ramPercent: 100, mtp: .off, vision: .off, simulated: machine.isSimulated, qualification: false,
+            decodeLookahead: .retained(enabled: busyStart.decodeLookahead, bytes: busyStart.lookaheadReserveBytes))
         if case .resize(let slots, _) = GovernorPolicy.decide(recovery) {
-            check("M01", "busy startup reaches a fully available small ceiling", slots == small.slots)
+            check("M01", "busy startup reaches a fully available small ceiling", slots == ceiling.slots)
         } else { check("M01", "busy startup reaches a fully available small ceiling", false) }
         recovery.currentSlots = Geometry.floorSlots; recovery.availableGB = 4.5
         check("M01", "partial availability keeps the ordinary growth deadband",

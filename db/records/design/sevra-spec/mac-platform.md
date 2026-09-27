@@ -3,7 +3,7 @@ type: native-spec
 meta-type: operational
 id: 01m2gb639kg290sh168ce1fd53
 created: 2026-09-14T16:14:44.019337+00:00
-updated: 2026-09-21T17:07:30.899151+00:00
+updated: 2026-09-24T06:11:54.776044+00:00
 summary: Mac native implementation baseline and dependency qualification
 ---
 # Mac implementation baseline
@@ -45,7 +45,10 @@ seconds normally or 300 in Low Power Mode/serious thermal conditions, extended
 to four times the longest observed model/context preparation duration, capped at
 1,800 seconds. Its purpose is to amortize expensive reloads while returning
 memory; these timings are not a measured optimum. Keep-ready overrides idle
-release, but not pressure, sleep, explicit release or Incognito cleanup.
+release, but not pressure, sleep or explicit release. Since September 24,
+Incognito cleanup after each private reply drops that conversation's prompt
+state and the allocator's reusable buffers but keeps the weights loaded;
+nothing from it was written to disk.
 Revise these delays using paired cold/warm everyday-work measurements.
 
 The runtime applies the latest pending settings only between complete jobs;

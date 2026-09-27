@@ -1,0 +1,93 @@
+{
+  "schema_version": 2,
+  "purpose": "Automatic context window per simulated tier with speculative decoding off, so the choice does not depend on local weights. The draft-head tiers are gated in Tools/planner_gates.sh with a placeholder head.",
+  "candidate_windows": [
+    32768,
+    65536,
+    131072,
+    262144
+  ],
+  "tiers": [
+    {
+      "tier": 16,
+      "args": [
+        "doctor",
+        "--model",
+        "/nonexistent/context-gate-no-model",
+        "--sim-ram",
+        "17.2",
+        "--sim-working-set",
+        "11.8",
+        "--sim-available",
+        "12.5",
+        "--mtp",
+        "off",
+        "--vision",
+        "off",
+        "--json"
+      ],
+      "expected_window": 32768
+    },
+    {
+      "tier": 24,
+      "args": [
+        "doctor",
+        "--model",
+        "/nonexistent/context-gate-no-model",
+        "--sim-ram",
+        "25.8",
+        "--sim-working-set",
+        "18",
+        "--sim-available",
+        "21",
+        "--mtp",
+        "off",
+        "--vision",
+        "off",
+        "--json"
+      ],
+      "expected_window": 32768
+    },
+    {
+      "tier": 32,
+      "args": [
+        "doctor",
+        "--model",
+        "/nonexistent/context-gate-no-model",
+        "--sim-ram",
+        "34.4",
+        "--sim-working-set",
+        "25.8",
+        "--sim-available",
+        "29",
+        "--mtp",
+        "off",
+        "--vision",
+        "off",
+        "--json"
+      ],
+      "expected_window": 65536
+    },
+    {
+      "tier": 48,
+      "args": [
+        "doctor",
+        "--model",
+        "/nonexistent/context-gate-no-model",
+        "--sim-ram",
+        "51.5",
+        "--sim-working-set",
+        "40.2",
+        "--sim-available",
+        "44",
+        "--mtp",
+        "off",
+        "--vision",
+        "off",
+        "--json"
+      ],
+      "expected_window": 131072
+    }
+  ],
+  "schema_note": "Version 2 changes only tier 48. Without the draft head the decode lookahead now runs in plain decode and reserves 373 MiB, which moves that tier's 32,768-token cache from 152 to 149 experts per layer, inside the measured decode range of 150. The rule therefore prices the 131,072-token window, 130 experts per layer at +5.9% to the typical request, instead of declining it as an unmeasured cache reduction. Each tier also plans with --model at an absent directory so the lookahead's charge never depends on an installed tap-correction file. Version 1 stays as the historical fixture."
+}

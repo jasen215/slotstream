@@ -8,6 +8,7 @@ import SlotstreamDiagnostics
 extension Catalogue {
     static var t0Checks: [Check] {
         [
+            Check("persistent-prefix-metadata-bounds", tier: .t0) { try persistentPrefixMetadataBounds() },
             Check("prefill-schedule", tier: .t0) { Diagnostics.prefillSchedule() },
             Check("context-policy", tier: .t0) { contextPolicy() },
             Check("automatic-context-window", tier: .t0) { try automaticContextWindow() },
@@ -24,7 +25,9 @@ extension Catalogue {
             Check("runtime-check", tier: .t0) { try Diagnostics.runtime() },
             Check("prefix-client-capacity", tier: .t0) { try Diagnostics.optimizationPrefixCapacity() },
             Check("persistent-prefix-policy", tier: .t0) { Diagnostics.persistentPrefixPolicy() },
+            Check("persistent-prefix-clear", tier: .t0) { try persistentPrefixClear() },
             Check("persistent-conversation-ids", tier: .t0) { try Diagnostics.persistentConversationIDs() },
+            Check("persistent-prefix-read-failures", tier: .t0) { try persistentPrefixReadFailures() },
             Check("governor-check", tier: .t0) { Diagnostics.governorPolicy() },
             Check("pull-check", tier: .t0) { try Diagnostics.pullIntegrity() },
             Check("machine-planning", tier: .t0) { try Diagnostics.machinePlanning() },
@@ -37,6 +40,7 @@ extension Catalogue {
             Check("expert-lookahead-forecast-merge", tier: .t0) { try Diagnostics.expertLookaheadForecastMerge() },
             Check("expert-lookahead-forecast-tap", tier: .t0) { try Diagnostics.expertLookaheadForecastTap() },
             Check("decode-lookahead-defaults", tier: .t0) { try Diagnostics.decodeLookaheadDefaults() },
+            Check("gpu-keepalive-policy", tier: .t0) { try Diagnostics.gpuKeepAlivePolicy() },
             Check("vision-check", tier: .t0) { Diagnostics.vision() },
             Check("prefill-read-policy", tier: .t0) { Diagnostics.fusedWorkspaceReservation() },
             // T1: touches MLX, so it needs the Metal library beside the runner.
@@ -57,6 +61,7 @@ extension Catalogue {
             Check("verify-pass-rows", tier: .t1) { Diagnostics.verifyPassRows() },
             Check("block-selection", tier: .t1) { Diagnostics.optimizationBlockSelection() },
             Check("indexer-visibility", tier: .t1) { Diagnostics.optimizationIndexerVisibility() },
+            Check("gpu-keepalive-runs", tier: .t1) { Diagnostics.gpuKeepAliveRuns() },
         ] + toolCallChecks + gatewayChecks + openAIChecks + responsesChecks + anthropicChecks + launchChecks + weightStoreChecks
     }
 
@@ -170,6 +175,19 @@ extension Catalogue {
                     && (json["candidates"] as? [[String: Any]])?.count == ContextPolicy.automaticWindows.count)
             c.measure("window_at_\(gb)_gb", Double(choice.window))
         }
+        // The estimate holds speculative decoding fixed, so a larger window
+        // that would move the head's experts from resident to streamed is
+        // declined; asked for explicitly, that window keeps the head.
+        let mac32 = Machine(ramGB: 32, workingSetGB: 24, availableGB: 32, isSimulated: true)
+        let choice32 = Planner.automaticContextWindow(PlanRequest(), on: mac32, mtpAvailable: true, visionAvailable: true)
+        let declined32 = choice32.candidates.first { $0.window == 65_536 }
+        c.expect("32 GB declines 65,536 because the head's experts would stream",
+            declined32?.accepted == false && declined32?.reason.contains("streams the draft head's experts") == true,
+            declined32?.reason ?? "no candidate")
+        let explicit32 = try Planner.resolveContextWindow(.tokens(65_536), request: PlanRequest(), on: mac32,
+            mtpAvailable: true, visionAvailable: true)
+        c.expect("an explicit 65,536 on 32 GB keeps the head by streaming its experts",
+            explicit32.plan.mtpEnabled && explicit32.plan.mtpStreamedExperts && explicit32.plan.decodeLookahead)
         let big = Machine(ramGB: 128, workingSetGB: 96, availableGB: 128, isSimulated: true)
         c.expect("a fixed cache size keeps the default window",
             Planner.automaticContextWindow(PlanRequest(expertsPerLayer: 120), on: big, mtpAvailable: true).window

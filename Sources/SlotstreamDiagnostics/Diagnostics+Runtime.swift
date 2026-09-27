@@ -215,6 +215,13 @@ extension Diagnostics {
         referenceOverrides["SLOTSTREAM_OPT_AUTO_READ_SCOPE"] = "0"
         referenceOverrides["SLOTSTREAM_OPT_VISION_QUERY_TILE"] = "0"
         referenceOverrides["SLOTSTREAM_OPT_ALIGNED_RESUME"] = "0"
+        referenceOverrides["SLOTSTREAM_OPT_DIRECT_DEMAND"] = "0"
+        var staged = candidate
+        staged.directDemandReads = nil
+        c.equal("explicit zero keeps demand reads staged",
+            try InferenceOptimizations.resolving(environment: ["SLOTSTREAM_OPT_DIRECT_DEMAND": "0"], defaults: candidate), staged)
+        c.equal("explicit one restores direct demand reads",
+            try InferenceOptimizations.resolving(environment: ["SLOTSTREAM_OPT_DIRECT_DEMAND": "1"], defaults: staged), candidate)
         c.equal("explicit zeros restore the complete reference inference family",
             try InferenceOptimizations.resolving(environment: referenceOverrides, defaults: candidate),
             InferenceOptimizations())

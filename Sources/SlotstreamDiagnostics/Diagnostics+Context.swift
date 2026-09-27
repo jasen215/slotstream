@@ -773,7 +773,7 @@ extension Diagnostics {
                         let held = prefix ? min(initial.prefixCacheTokens, 8192) * PrefixCache.bytesPerToken : 0
                         let owned = additional + held + (held > 0 ? PrefixCache.fixedBytesPerEntry : 0)
                         let physical = whole - initial.poolGB - Planner.fixedFootprintGB
-                            - (mode == 1 ? Planner.mtpResidentGB : 0)
+                            - (mode == 1 ? (initial.mtpStreamedExperts ? Planner.mtpStreamedGB : Planner.mtpResidentGB) : 0)
                             - (mode == 2 ? Planner.visionResidentGB : 0) - Double(owned) / 1e9
                             - Double(initial.lookaheadReserveBytes) / 1e9
                         guard physical >= 0 else { continue }
@@ -784,6 +784,7 @@ extension Diagnostics {
                             maxContextTokens: cap, runtimeAllocationPolicy: policy,
                             ownedAdditionalBytes: owned, contextQualification: true,
                             decodeLookahead: initial.decodeLookahead, lookaheadReserveBytes: initial.lookaheadReserveBytes)
+                        input.mtpStreamedExperts = initial.mtpStreamedExperts
                         let settled = GovernorPolicy.desiredPlan(input)
                         let physicalBudget = min(input.workingSetGB,
                             whole - Planner.availabilitySlackGB(ramGB: input.ramGB))

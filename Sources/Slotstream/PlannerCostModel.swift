@@ -8,6 +8,17 @@ package enum PlannerCostModel {
     package static let planningMarginBytes = 1_000_000_000
     package static let prefillBytesPerToken = 1_300_000
     package static let mtpResidentBytes = 1_600_000_000
+    /// The draft head's routed experts: 512 records of 2,764,800 bytes, the
+    /// same geometry as the main model's. A streamed head keeps its other
+    /// weights, a cache of `mtpStreamSlots` records and one row of read
+    /// scratch (top 10) resident; the resident charge's allowance above the
+    /// file size carries over unchanged.
+    package static let mtpExpertCount = 512
+    package static let mtpExpertBytes = 2_764_800
+    package static let mtpStreamSlots = 64
+    package static let mtpStreamScratchExperts = 10
+    package static let mtpStreamedBytes = mtpResidentBytes - mtpExpertCount * mtpExpertBytes
+        + (mtpStreamSlots + mtpStreamScratchExperts) * mtpExpertBytes
     package static let visionResidentBytes = 900_000_000
     package static let visionLoadMarginBytes = 1_000_000_000
     package static let tuningPromptTokens = 2000.0

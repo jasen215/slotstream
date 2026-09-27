@@ -159,6 +159,10 @@ package final class ExpertLookaheadSession {
     package var observerCandidatesPerRow = 10
     package var forecastSelfCheck = false
     package var captureForecastInputs = false
+    /// Plain decode passes forecast and prefetch like verification passes.
+    /// The engine sets it when a plan runs the lookahead without the draft
+    /// head; with the head, plain passes stay exactly as they were.
+    package var forecastsPlainPasses = false
     /// The capture command's correction for an observer-only corrected tap.
     package var observerTapCorrection: RouterTapCorrection?
 
@@ -189,16 +193,19 @@ package final class ExpertLookaheadSession {
         if let prefetch, prefetch.usesRouterForecast { return prefetch.configuration.topPerLayer }
         return observerCandidatesPerRow
     }
-    /// Only main verification passes forecast: the scheduler acts on those
-    /// alone, and prefill or plain passes must stay exactly as they were.
+    /// Main verification passes forecast, and plain decode passes when
+    /// `forecastsPlainPasses` is set; prefill never does.
     package var wantsRouterForecast: Bool {
-        currentPhase == .mainVerify && (forecastSelfCheck || !routerForecastStrides.isEmpty)
+        forecasts(currentPhase) && (forecastSelfCheck || !routerForecastStrides.isEmpty)
+    }
+    package func forecasts(_ phase: ExpertLookaheadPhase?) -> Bool {
+        phase == .mainVerify || (forecastsPlainPasses && phase == .mainPlain)
     }
     /// The attention taps a main verification pass evaluates: the policy's tap
     /// when it is not the boundary, then the observer-only taps. The corrected
     /// tap is evaluated only when a correction is loaded.
     package var attentionForecastTaps: [RouterForecastTap] {
-        guard currentPhase == .mainVerify else { return [] }
+        guard forecasts(currentPhase) else { return [] }
         // A corrected tap evaluates only with a correction fitted for it.
         let served = tapCorrection?.correctedTap
         func evaluates(_ tap: RouterForecastTap) -> Bool { tap != .boundary && (!tap.isCorrected || served == tap) }
@@ -217,7 +224,7 @@ package final class ExpertLookaheadSession {
         guard currentPass >= 0 else { return }
         observer?.forecast(pass: currentPass, sourceLayer: sourceLayer, targetLayer: targetLayer, tap: tap, rows: rows,
                            ids: ids, margins: margins, inputs: inputs)
-        guard targetLayer > sourceLayer, currentPhase == .mainVerify, let prefetch else { return }
+        guard targetLayer > sourceLayer, forecasts(currentPhase), let prefetch else { return }
         if let policyTap = schedulerTap {
             guard policyTap == tap,
                   tap != .boundary || prefetch.configuration.strides.contains(targetLayer - sourceLayer) else { return }
@@ -240,7 +247,7 @@ package final class ExpertLookaheadSession {
         passTokens = tokens
         let now = RuntimeClock.now()
         observer?.beginPass(id: id, phase: phase, tokens: tokens, features: features, nanos: now)
-        if let prefetch, phase == .mainVerify {
+        if let prefetch, forecasts(phase) {
             prefetch.beginPass(id: id, features: features)
             passesForecast += 1
         }

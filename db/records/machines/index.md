@@ -2,11 +2,16 @@
 type: index
 scope: type-folder
 folder: records/machines
-updated: 2026-09-10T21:40:02.882876Z
+updated: 2026-09-26T16:03:04.057476Z
 ---
 
 # records/machines
 
+- [[records/machines/macbook-pro-m4-pro-24gb]] — MacBook Pro, Apple M4 Pro, 24 GB (community)
+- [[records/machines/macbook-pro-m4-max-36gb]] — MacBook Pro, Apple M4 Max, 36 GB (community)
+- [[records/machines/macbook-pro-m4-max-64gb]] — MacBook Pro 16-inch, Apple M4 Max, 64 GB (community)
+- [[records/machines/macbook-pro-m3-max-64gb]] — MacBook Pro 14-inch, Apple M3 Max, 64 GB (community)
+- [[records/machines/macbook-air-m5-32gb-local]] — The 32 GB MacBook Air (Apple M5, macOS 27) the 2026-09-24 live shared-prefix acceptance ran on
 - [[records/machines/github-actions-macos-26]] — Ephemeral macOS CI runner pool
 - [[records/machines/macbook-air-m5-32gb]] — MacBook Air, Apple M5, 32 GB (community)
 - [[records/machines/macbook-pro-m5-max-128gb]] — MacBook Pro 16-inch, Apple M5 Max, 128 GB (community)

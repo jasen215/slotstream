@@ -14,6 +14,7 @@ python3 Tools/static_gates_binary_test.py
 python3 Tools/installer_gates_binary_test.py
 python3 Tools/installer_metal_test.py
 python3 Tools/verify_binary_test.py
+python3 Tools/parity_comparison_test.py
 python3 Tools/sampler_gates_test.py
 python3 Tools/planner_gates_test.py
 python3 Tools/api_generation_test.py
@@ -48,6 +49,7 @@ fi
 # It compiles the production counter directly, without MLX or model weights.
 python3 Tools/process_memory_gate.py
 "$BIN" pull-check
+python3 Tools/pull_interrupt_gate.py
 python3 Tools/slotpack/checks.py
 Tools/planner_gates.sh
 python3 Tools/memory_override_gate.py --binary "$BIN"

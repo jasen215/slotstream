@@ -8,9 +8,9 @@ import Slotstream
 /// in one thread. Each run's numbers are compared field by field with the
 /// engine's statistics for exactly its requests. Prints one JSON receipt.
 ///
-/// The engine resumes a request only at its own prefill pass boundaries, the
-/// first of which is 256 tokens in, so the opening message is long enough for
-/// the system prompt and that message to pass it. A shorter conversation is
+/// The engine resumes a request only at its own prefill pass boundaries, so
+/// the opening message crosses the first boundary in either Desktop schedule.
+/// A shorter conversation is
 /// read again in full every turn, and no reuse would be recorded to compare.
 func realMetricsCheckIfRequested() async throws -> Bool {
     guard CommandLine.arguments.contains("--real-metrics") else { return false }
@@ -20,8 +20,9 @@ func realMetricsCheckIfRequested() async throws -> Bool {
     let home = URL(fileURLWithPath: destination).standardizedFileURL
     guard !FileManager.default.fileExists(atPath: home.path) else { throw SevraError.refused("Real checks require a new disposable Home.") }
     let dbmd = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SEVRA_DBMD"] ?? NSHomeDirectory() + "/.dbmd/bin/dbmd")
-    guard (Machine.current().availableGB ?? 0) >= 13 else { throw SevraError.refused("The real check requires the 10 GB plan plus at least 3 GB headroom.") }
-    let engine = LocalInference(memoryGB: 10)
+    let budget = try realCheckBudget()
+    guard (Machine.current().availableGB ?? 0) >= budget + 3 else { throw SevraError.refused("The real check requires the selected plan plus at least 3 GB headroom.") }
+    let engine = LocalInference(memoryGB: budget)
     var runtime: SevraRuntime? = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: engine)
     let thread = try await runtime!.newThread(title: "Metrics")
     var phases: [[String: Any]] = []
@@ -49,7 +50,10 @@ func realMetricsCheckIfRequested() async throws -> Bool {
         try require(m.thoughtTokens == (thoughtStats?.decodeTokens ?? 0) && near(m.thoughtSeconds, thoughtStats?.decodeSeconds ?? 0), "\(phase): thought tokens and time are the engine's")
         try require(m.readTokens == stats.reduce(0) { $0 + $1.prefillTokens } && near(m.readSeconds, stats.reduce(0) { $0 + $1.prefillSeconds }), "\(phase): reading is the engine's prefill")
         try require(m.cachedTokens == first.reusedPrefixTokens && m.contextTokens == stats.map(\.promptTokens).max(), "\(phase): cache reuse and context size are the engine's")
-        try require(m.rounds == 1 && m.windowTokens > 0 && m.budgetGB.map { $0 <= 10 } == true && m.memoryLimitGB == 10 && m.customBudget == true, "\(phase): current budget stays within the separately recorded 10 GB limit")
+        try require(m.rounds == 1 && m.windowTokens > 0 && m.budgetGB.map { $0 <= budget } == true && m.memoryLimitGB == budget && m.customBudget == true, "\(phase): current budget stays within the separately recorded limit")
+        if args.contains("--mtp-profile-gb"), thought {
+            try require(stats.reduce(0) { $0 + $1.draftedTokens } > 0, "\(phase): MTP actually drafts in the phased app turn")
+        }
         try require(m.firstTokenSeconds.map { $0 > 0 && $0 < 600 } == true, "\(phase): first token time is measured")
         let written = stats.reduce(0) { $0 + $1.decodeTokens }
         let weighted = written > 0 ? stats.reduce(0.0) { $0 + $1.expertHitRate * Double($1.decodeTokens) } / Double(written) : nil
@@ -67,7 +71,7 @@ func realMetricsCheckIfRequested() async throws -> Bool {
             ["prompt_tokens": s.promptTokens, "prefill_tokens": s.prefillTokens, "reused_prefix_tokens": s.reusedPrefixTokens,
              "prefill_seconds": s.prefillSeconds, "decode_tokens": s.decodeTokens, "decode_seconds": s.decodeSeconds, "decode_tps": s.decodeTPS,
              "first_token_seconds": s.firstTokenSeconds ?? -1, "aligned_resume_refusals": s.alignedResumeRefusals, "finish_reason": s.finishReason,
-             "expert_hit_rate": s.expertHitRate]
+             "expert_hit_rate": s.expertHitRate, "drafted_tokens": s.draftedTokens, "accepted_drafts": s.acceptedDrafts]
         }
         phases.append(entry)
         print(String(decoding: try JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys, .prettyPrinted]), as: UTF8.self)); fflush(stdout)
@@ -77,13 +81,14 @@ func realMetricsCheckIfRequested() async throws -> Bool {
     try await runtime!.setThinking(threadID: thread, enabled: true)
     await runtime!.setThinkingOverride(ThinkingRequest(level: ThinkingPolicy.level, budgetTokens: Int(option("--budget") ?? "") ?? 96, replyTokens: ThinkingPolicy.replyTokens, seed: 5))
     let log = "I keep a small bakery's weekly production log and want one number checked before I share it with the team. Monday: 17 trays of rolls, 23 rolls on each tray. Tuesday: 12 trays of rolls, 24 rolls on each tray. Wednesday: 9 trays of croissants, 18 on each tray. Thursday: 14 trays of muffins, 12 on each tray. Friday: 20 trays of rolls, 23 on each tray. Saturday: 11 trays of bagels, 16 on each tray. Sunday: closed for cleaning. The log counts only full trays, and every tray on a given day holds the same number of items. The team plans flour orders from these counts, so the number has to be exact. How many rolls were baked on Monday? Think it through, then answer in one sentence."
-    let a = try await runtime!.submit(threadID: thread, text: log, nonce: "real-metrics-think")
+    let ledger = (1...48).map { "Ledger entry \($0) has been checked." }.joined(separator: " ")
+    let a = try await runtime!.submit(threadID: thread, text: ledger + " " + log, nonce: "real-metrics-think")
     let aRun = try await finish(a)
     try require(aRun.state == .completed, "the thinking turn completes: " + aRun.status)
     try await compare("thinking_turn", aRun, thought: true)
     try require(aRun.metrics?.loadSeconds.map { $0 > 0 } == true, "the first turn records the model load it waited for")
     let opening = await engine.lastStats.first?.promptTokens ?? 0
-    try require(opening > 300, "the opening prompt passes the first pass boundary with room to spare: \(opening) tokens")
+    try require(opening > 512, "the opening prompt passes the first pass boundary with room to spare: \(opening) tokens")
     // A second thought with the switch unchanged reuses the loaded model and
     // the conversation's state up to the first pass boundary the two prompts share.
     let b = try await runtime!.submit(threadID: thread, text: "And how many rolls on Tuesday? One sentence.", nonce: "real-metrics-think-again")
@@ -104,7 +109,7 @@ func realMetricsCheckIfRequested() async throws -> Bool {
     try await runtime!.shutdown(); runtime = nil
     let saved = try HomeStore(root: home, dbmd: dbmd).load().threads.first { $0.id == thread }
     try require(saved?.allRuns.compactMap(\.metrics).count == 3, "every run's numbers persist")
-    print(String(decoding: try JSONSerialization.data(withJSONObject: ["phases": phases, "model_plan_gb": 10], options: [.sortedKeys, .prettyPrinted]), as: UTF8.self))
+    print(String(decoding: try JSONSerialization.data(withJSONObject: ["phases": phases, "model_plan_gb": budget], options: [.sortedKeys, .prettyPrinted]), as: UTF8.self))
     print("PASS: real recorded numbers equal the engine's for a thinking turn with model load, a second thinking turn with conversation reuse and a plain turn after switching")
     return true
 }

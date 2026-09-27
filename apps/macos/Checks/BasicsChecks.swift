@@ -187,10 +187,10 @@ func basicsChecks(root: URL, dbmd: URL) async throws {
 
 /// The limits docs/SEVRA-MAC.md states. Each one has a claim record in the
 /// store that names this check as its gate. The 64 MB document refusal and
-/// the 2,000-file folder refusal are exercised in the source and audit checks.
+/// live folder navigation are exercised in the source and navigation checks.
 func documentedLimitChecks(reader: DocumentReader, base: URL) async throws {
     try check(SourceLimits.attachments == 8 && SourceLimits.textBytes == 8 << 20 && DocumentReader.inputLimit == 64 << 20
-              && SourceLimits.recognitionPagesPerJob == 40 && SourceLimits.files == 2_000, "the documented source limits are unchanged")
+              && SourceLimits.recognitionPagesPerJob == 40, "the documented source limits are unchanged")
     let fm = FileManager.default
     let folder = base.appendingPathComponent("Limits")
     try fm.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -216,7 +216,7 @@ func documentedLimitChecks(reader: DocumentReader, base: URL) async throws {
     try await refuses("a text file over 8 MB is refused", containing: "(8 MB)") {
         _ = try single.execute(tool("source.read", ["id": .string(largeID)]), cancellation: Cancellation())
     }
-    print("PASS: documented limits: eight attachments, 8 MB text files, 64 MB documents, 40 recognized pages per request, 2,000 files per folder")
+    print("PASS: documented limits: eight attachments, 8 MB text files, 64 MB documents, 40 recognized pages per request, live folder navigation")
 }
 
 // MARK: helper isolation
@@ -314,14 +314,15 @@ func sourceChecks(reader: DocumentReader, base: URL) async throws {
 
     let session = SourceSession(reader: reader)
     let folderInfo = try session.attach(url: folder, access: .read)
-    try check(folderInfo.kind == .folder && folderInfo.files == 9 && folderInfo.skipped == 1, "folder inventory skips hidden files and dependency folders (\(folderInfo))")
+    try check(folderInfo.kind == .folder && folderInfo.files == nil, "folder access is live without an upfront inventory (\(folderInfo))")
     let fileInfo = try session.attach(url: single, access: .read)
     try check(fileInfo.kind == .file && fileInfo.files == 1 && session.infos.count == 2, "a file and a folder attach together")
     try check(session.groups == [.read, .document], "read-only attachments offer reading tools only")
     try await refuses("the same folder cannot attach twice", containing: "already attached") { _ = try session.attach(url: folder, access: .read) }
     let cancel = Cancellation()
     let listing = try object(session.execute(tool("source.list"), cancellation: cancel))
-    let files = listing["files"] as? [[String: Any]] ?? []
+    let docs = try object(session.execute(tool("source.list", ["attachment": .string(folderInfo.id), "path": .string("docs")]), cancellation: cancel))
+    let files = (listing["files"] as? [[String: Any]] ?? []) + (docs["files"] as? [[String: Any]] ?? [])
     let paths = files.compactMap { $0["path"] as? String }
     try check(paths.contains("Project Files/docs/cedar.pdf") && paths.contains("single-note.txt") && !paths.contains { $0.contains(".env") || $0.contains("node_modules") }, "listing names each attachment and hides private files")
     func id(_ suffix: String) throws -> String {
@@ -329,8 +330,24 @@ func sourceChecks(reader: DocumentReader, base: URL) async throws {
         return value
     }
 
+    // Search may yield after its work budget even when a result page is not
+    // full. Consume every continuation before asserting corpus-wide coverage.
+    func searchAll(_ arguments: [String: JSONValue]) throws -> [String: Any] {
+        var args = arguments, combined: [String: Any] = [:], pages = 0
+        while true {
+            let page = try object(session.execute(tool("source.search", args), cancellation: cancel))
+            for key in ["matches", "unreadable", "scanned_pages_not_searched"] {
+                combined[key] = (combined[key] as? [Any] ?? []) + (page[key] as? [Any] ?? [])
+            }
+            combined["match"] = page["match"]
+            pages += 1
+            try check(pages < 100, "document search continues to completion")
+            guard let cursor = page["next_cursor"] as? String else { return combined }
+            args["cursor"] = .string(cursor)
+        }
+    }
     // PDF text with pages, found by search and cited by page.
-    let found = try object(session.execute(tool("source.search", ["query": .string("pilot budget")]), cancellation: cancel))
+    let found = try searchAll(["query": .string("pilot budget")])
     let match = (found["matches"] as? [[String: Any]])?.first { ($0["path"] as? String)?.hasSuffix("cedar.pdf") == true }
     try check(match?["page"] as? Int == 2, "search finds PDF text and reports its page")
     let unreadable = found["unreadable"] as? [String] ?? []
@@ -340,8 +357,8 @@ func sourceChecks(reader: DocumentReader, base: URL) async throws {
     try check((page["content"] as? String)?.hasPrefix("Cedar budget") == true && page["pages"] as? String == "2-3" && page["page_count"] as? Int == 3, "page read starts at the page")
     let pdfCitation = session.citations.last!
     try check(pdfCitation.page == 2 && pdfCitation.method == "pdfkit" && pdfCitation.location == "page 2", "PDF citation records page and method")
-    let words = try object(session.execute(tool("source.search", ["query": .string("north rollout")]), cancellation: cancel))
-    try check(words["match"] as? String == "all words on a line" && ((words["matches"] as? [[String: Any]])?.count ?? 0) == 1, "search falls back to all words on a line")
+    let words = try searchAll(["query": .string("north rollout"), "match": .string("words")])
+    try check(words["match"] as? String == "all words on a line" && ((words["matches"] as? [[String: Any]])?.count ?? 0) == 1, "search supports an explicit all-words-on-a-line mode")
 
     // Images and scanned pages are recognized on read. The helper first proves that
     // Vision works inside its sandbox. On GitHub's macOS runners it does not, although
@@ -360,7 +377,7 @@ func sourceChecks(reader: DocumentReader, base: URL) async throws {
     if recognized {
         let scan = try object(session.execute(tool("source.read", ["id": .string(try id("scan.pdf"))]), cancellation: cancel))
         try check((scan["content"] as? String)?.localizedCaseInsensitiveContains("receipt") == true && session.citations.last?.method == "ocr" && (scan["note"] as? String)?.contains("recognized") == true, "scanned PDF page is recognized on read")
-        let rescan = try object(session.execute(tool("source.search", ["query": .string("receipt")]), cancellation: cancel))
+        let rescan = try searchAll(["query": .string("receipt")])
         try check(((rescan["matches"] as? [[String: Any]]) ?? []).contains { ($0["path"] as? String)?.hasSuffix("scan.pdf") == true }, "recognized text becomes searchable")
     }
 
@@ -403,7 +420,7 @@ func sourceChecks(reader: DocumentReader, base: URL) async throws {
     DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { stopper.cancel() }
     let started = Date()
     try await refuses("reading stops when cancelled", containing: "Stopped") {
-        _ = try longSession.execute(tool("source.read", ["id": .string("file-1")]), cancellation: stopper)
+        _ = try longSession.execute(tool("source.read", ["id": .string("a1:long.pdf")]), cancellation: stopper)
     }
     try check(Date().timeIntervalSince(started) < 5, "cancellation stops extraction promptly")
     let lingering = try Fixture.run(URL(fileURLWithPath: "/usr/bin/pgrep"), ["-f", reader.helper.path + " document"])
@@ -474,7 +491,7 @@ func attachmentReferenceChecks(base: URL, dbmd: URL, helper: URL) async throws {
     try await runtime.submit(threadID: thread, text: "what is this?", nonce: "this")
     _ = try await waitFor(runtime, thread)
     var prompt = await system()
-    try check(prompt.contains("Attached to this thread:\n- \"pitch-deck.pdf\" (file, read only)") && prompt.contains("it means these attachments"),
+    try check(prompt.contains("Attached to this thread:\n- a1: \"pitch-deck.pdf\" (file, read only)") && prompt.contains("it means these attachments"),
               "the model is told which file is attached and what \"this\" refers to (\(prompt.suffix(400)))")
 
     _ = try await runtime.attach(threadID: thread, folder: odd, access: .read)
@@ -482,7 +499,7 @@ func attachmentReferenceChecks(base: URL, dbmd: URL, helper: URL) async throws {
     try await runtime.submit(threadID: thread, text: "and now?", nonce: "change")
     _ = try await waitFor(runtime, thread)
     prompt = await system()
-    try check(prompt.contains("- \"pitch-deck.pdf\" (file, changes need review)") && prompt.contains(#"- "notes \"final\".md" (file, read only)"#),
+    try check(prompt.contains("- a1: \"pitch-deck.pdf\" (file, changes need review)") && prompt.contains(#"- a2: "notes \"final\".md" (file, read only)"#),
               "names are quoted as data and the access shown is current (\(prompt.suffix(400)))")
 
     let plain = try await runtime.newThread(title: "Plain")
@@ -504,9 +521,9 @@ func narrationChecks(base: URL, dbmd: URL, helper: URL) async throws {
     let long = Array(repeating: "checking", count: 120).joined(separator: " ")
     let script = ScriptedInference(turns: [
         EngineTurn(text: "I'll look through the attached files to find the budget.", calls: [tool("source.list")]),
-        EngineTurn(text: "\n  Now the budget\nfile itself.  ", calls: [tool("source.read", ["id": .string("file-1")])]),
+        EngineTurn(text: "\n  Now the budget\nfile itself.  ", calls: [tool("source.read", ["id": .string("a1:budget.md")])]),
         EngineTurn(text: "The Cedar pilot budget is $7,300 [S1]."),
-        EngineTurn(text: "The budget is $7,300 [S1]. Let me confirm it.", calls: [tool("source.read", ["id": .string("file-1")])]),
+        EngineTurn(text: "The budget is $7,300 [S1]. Let me confirm it.", calls: [tool("source.read", ["id": .string("a1:budget.md")])]),
         EngineTurn(text: "  \n"),
         EngineTurn(text: long, calls: [tool("source.list")]),
         EngineTurn(text: "", calls: [tool("source.list")]),
@@ -555,8 +572,8 @@ func changeChecks(base: URL, dbmd: URL, helper: URL) async throws {
     let tagValue = Data("sevra-check".utf8)
     _ = tagValue.withUnsafeBytes { setxattr(plan.path, tagName, $0.baseAddress, tagValue.count, 0, 0) }
     func read(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }
-    let edit: [String: JSONValue] = ["id": .string("file-1"), "old": .string("Status: draft"), "new": .string("Status: approved")]
-    let readPlan = EngineTurn(text: "", calls: [tool("source.read", ["id": .string("file-1")])])
+    let edit: [String: JSONValue] = ["id": .string("a1:plan.md"), "old": .string("Status: draft"), "new": .string("Status: approved")]
+    let readPlan = EngineTurn(text: "", calls: [tool("source.read", ["id": .string("a1:plan.md")])])
     let script = ScriptedInference(turns: [
         EngineTurn(text: "I can only read this folder."),
         EngineTurn(text: "", calls: [tool("file.edit", edit)]),
@@ -679,9 +696,9 @@ func crashApplyChildIfRequested() async throws -> Bool {
     let args = CommandLine.arguments
     guard args.count == 6, args[1] == "--crash-apply" else { return false }
     let turns = [
-        EngineTurn(text: "", calls: [tool("source.read", ["id": .string("file-1")]), tool("source.read", ["id": .string("file-2")])]),
-        EngineTurn(text: "", calls: [tool("file.write", ["id": .string("file-1"), "content": .string("first changed\n")]),
-                                     tool("file.write", ["id": .string("file-2"), "content": .string("second changed\n")])]),
+        EngineTurn(text: "", calls: [tool("source.read", ["id": .string("a1:a.txt")]), tool("source.read", ["id": .string("a1:b.txt")])]),
+        EngineTurn(text: "", calls: [tool("file.write", ["id": .string("a1:a.txt"), "content": .string("first changed\n")]),
+                                     tool("file.write", ["id": .string("a1:b.txt"), "content": .string("second changed\n")])]),
         EngineTurn(text: "Two changes staged."),
     ]
     let runtime = try SevraRuntime(homeURL: URL(fileURLWithPath: args[2]), dbmd: URL(fileURLWithPath: args[4]), inference: ScriptedInference(turns: turns), helper: URL(fileURLWithPath: args[5]))
@@ -737,19 +754,19 @@ func knowledgeChecks(base: URL, dbmd: URL, helper: URL) async throws {
         EngineTurn(text: "", calls: [tool("kb.search", ["query": .string("Juniper")]), tool("kb.query", ["type": .string("decision")])]),
         EngineTurn(text: "Juniper launches October 12."),
         EngineTurn(text: "", calls: [tool("kb.search", ["query": .string("Juniper|Cedar")])]),
-        EngineTurn(text: "", calls: [tool("source.read", ["id": .string("file-2")])]),
+        EngineTurn(text: "", calls: [tool("source.read", ["id": .string("a1:records/decisions/juniper.md")])]),
         EngineTurn(text: "", calls: [
-            tool("kb.edit", ["id": .string("file-2"), "old": .string("type: decision"), "new": .string("type: note")]),
-            tool("kb.edit", ["id": .string("file-1"), "old": .string("Team knowledge"), "new": .string("Changed")]),
-            tool("kb.append", ["id": .string("file-2"), "text": .string("Owner: Maya.")]),
+            tool("kb.edit", ["id": .string("a1:records/decisions/juniper.md"), "old": .string("type: decision"), "new": .string("type: note")]),
+            tool("kb.edit", ["id": .string("a1:DB.md"), "old": .string("Team knowledge"), "new": .string("Changed")]),
+            tool("kb.append", ["id": .string("a1:records/decisions/juniper.md"), "text": .string("Owner: Maya.")]),
             tool("kb.create", ["path": .string("records/decisions/rollout.md"), "type": .string("decision"), "summary": .string("Rollout order"), "body": .string("North region first.\n")]),
             tool("kb.create", ["path": .string("../escape.md"), "type": .string("decision"), "summary": .string("Escape"), "body": .string("No.\n")]),
         ]),
         EngineTurn(text: "I staged a knowledge base update."),
-        EngineTurn(text: "", calls: [tool("source.read", ["id": .string("file-2")])]),
+        EngineTurn(text: "", calls: [tool("source.read", ["id": .string("a1:records/decisions/juniper.md")])]),
         EngineTurn(text: "", calls: [
             tool("kb.create", ["path": .string("records/decisions/review.md"), "type": .string("decision"), "summary": .string("Rollout review"), "body": .string("Review the rollout.\n")]),
-            tool("kb.append", ["id": .string("file-2"), "text": .string("Reviewed.")]),
+            tool("kb.append", ["id": .string("a1:records/decisions/juniper.md"), "text": .string("Reviewed.")]),
         ]),
         EngineTurn(text: "I staged two more updates."),
     ])
@@ -763,7 +780,7 @@ func knowledgeChecks(base: URL, dbmd: URL, helper: URL) async throws {
     try check(state.run?.state == .completed && tools[0].contains("kb.search") && tools[0].contains("kb.query") && !tools[0].contains("kb.create"), "read-only knowledge base offers search and query only")
     let contexts = await script.observedContexts
     let results = contexts[1].filter { $0.role == "tool" }.map(\.content)
-    try check(results.count == 2 && results.allSatisfy { $0.contains("Team KB/records/decisions/juniper.md") && $0.contains("\"id\":\"file-2\"") }, "search and query return readable record IDs: \(results)")
+    try check(results.count == 2 && results.allSatisfy { $0.contains("Team KB/records/decisions/juniper.md") && $0.contains("\"id\":\"a1:records/decisions/juniper.md\"") }, "search and query return readable record IDs: \(results)")
 
     let writer = try await runtime.newThread(title: "Update the KB")
     try await runtime.attach(threadID: writer, folder: kb, access: .change)

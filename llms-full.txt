@@ -11,18 +11,24 @@ Relative links below point at the same sections, which are all in this file.
 [![Latest release](https://img.shields.io/github/v/release/carloslfu/slotstream?label=latest%20release)](https://github.com/carloslfu/slotstream/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/carloslfu/slotstream?style=flat&logo=github&label=stars)](#star-history)
 
-**Run a 105 GB AI model on a 48 GB Mac.**
+**Run a 105 GB AI model on a Mac that can't hold it.**
 
 Slotstream runs [Qwen3.8-Flash-Next](https://huggingface.co/pipenetwork/Qwen3.8-Flash-Next-MLX-4bit),
-a large open model, on your Mac by keeping most of it on SSD and loading the
-parts it needs into memory. It is built for Macs with 16 to 64 GB of memory,
-where the model cannot fit. After a one-time download the model works
-offline, with no Python and no cloud account. The whole engine is one native
-Swift program on Apple's MLX and Metal; see [Built native](#built-native).
+a 125-billion-parameter open model, on Macs with 16 to 64 GB of memory. It
+keeps most of the model on the SSD and loads the parts it needs as it writes.
+Our 48 GB M5 Pro measured 15.86 tokens per second at a 22 GB memory target
+([how it was measured](#speed)).
 
-Use it to chat, ask about pictures, or work with files through a coding agent
-such as Claude Code, Codex, Pi, opencode or Hermes. Developers can connect
-their own apps through its APIs or Swift library.
+Chat with it, ask it about pictures, or code with it: `slotstream launch claude`
+starts Claude Code on the local model, and Codex, Pi, opencode and Hermes work
+the same way. Developers can connect their own apps through its Ollama-,
+OpenAI- and Anthropic-compatible APIs or its Swift library.
+
+After a one-time download it works offline, with no Python and no cloud
+account. The whole engine is one native Swift program on Apple's MLX and
+Metal; see [Built native](#built-native). Every published number has a
+recorded method, and the experiments that failed stay in the
+[measurements](MEASUREMENTS.md).
 
 [Get started](#install) · [Speed](#speed) · [Guides](#guides) · [Get help](#support)
 
@@ -477,8 +483,8 @@ The transfer alone is estimated at about 2 hours at 100 Mbps or 8 hours at 25 Mb
 Connection overhead and processing add to that time. You can stop with
 **Control+C** and run the same command later to resume. Downloaded files are
 checked for corruption automatically. Since 0.2.19 the download also includes
-a small forecast-correction file (37.5 MB) that makes replies faster; if you
-installed the model with an earlier release, run `slotstream pull` once more to
+a small forecast-correction file (37.5 MB) that makes replies faster. If
+`slotstream doctor` says it is missing, run `slotstream pull` once more to
 fetch it.
 
 For an interrupted or damaged download, moving the files to another disk,
@@ -619,7 +625,8 @@ that use.
 
 What the native stack does not claim: the measured gains on this page come
 from the mechanisms named with them, the decode lookahead, the corrected
-expert forecast, speculative decoding and the prefix cache. Warm decode is
+expert forecast, speculative decoding, the prefix cache, the GPU keepalive and
+direct demand reads. Warm decode is
 dominated by SSD reads and GPU waits, so the work goes to fewer reads and
 more overlap rather than host-side micro-optimization
 ([decision](../db/records/decisions/decode-host-time-is-waiting-not-graph-construction.md)).
@@ -679,15 +686,24 @@ At a 28 GB memory target, that one-draft configuration improved greedy decode
 by ×1.24 (10.3 → 12.8 tok/s); the improvement was ×1.18 with default server
 sampling.
 
-`--mtp auto` enables this when the expert cache can still hold 76 experts per
-layer after allocating 1.6 GB for the head, before the separate lookahead
-reservation, a 21 GB target at the 32,768-token window. Availability and
-context can change activation. The floor was 120 until 0.2.16; on 0.2.14, two drafts decoded 31.7%
-faster than plain decode on the same memory at 76 per layer. The automatic
-ceiling is 34.6 GB with the head enabled at the 32,768-token window; larger
-windows add their context charges. `--mtp off` disables the head.
+`--mtp auto` enables this when the expert cache can still hold 28 experts per
+layer after the head's charge, before the separate lookahead reservation, a
+12 GB target at the 32,768-token window. Availability and context can change
+activation. The head's 512 experts are 1.42 GB of its 1.47 GB. On a cache of
+76 experts per layer or more after the full 1.6 GB charge they stay resident.
+Below that the head reads them from the SSD through a 64-expert cache of its
+own, a 0.4 GB charge, and the main cache keeps the other 1.2 GB. A draft row
+routes to ten experts; about half are already in that cache. At a 12 GB
+target this made the head 1.23x faster than plain decode with the lookahead,
+where a resident head only tied, and the head now runs on 24 GB Macs. The
+floor was 120 until 0.2.16 and 76 until now; on 0.2.14, two drafts decoded
+31.7% faster than plain decode on the same memory at 76 per layer. The
+automatic ceiling is 34.6 GB with the head enabled at the 32,768-token window;
+larger windows add their context charges. `--mtp off` disables the head.
 
-With the head on, 0.2.16 also runs the decode lookahead. After each layer, the
+With the head on, 0.2.16 also runs the decode lookahead, and without the head
+it now runs in plain decode too, where it made plain decode 1.11x faster at a
+10 GB target. After each layer, the
 router of the layer two ahead runs on the current hidden state, and the experts
 it picks are read from the SSD straight into cache slots before that layer asks
 for them. FP32 copies of the router weights save a conversion on every routing
@@ -703,6 +719,31 @@ records its 373 MiB charge, overrides and limits.
 The short [expert lookahead guide](EXPERT-LOOKAHEAD.md) explains the mechanism
 and the experiments that led to it.
 
+### GPU keepalive and direct demand reads
+
+Streamed decode is stop-and-go. At every layer the host reads the routing
+back, reads the experts the cache is missing and only then submits the next
+burst of GPU work, so a one-token pass is a few hundred short command buffers
+with the GPU idle in between. An idle Apple GPU lowers its clock and starts
+the next buffer late. While a request generates, Slotstream now keeps the GPU
+busy with a one-thread kernel on its own command queue. The kernel computes
+nothing and touches no model memory, so outputs are unchanged.
+
+Cache misses used to be read into staging arrays and then scattered into the
+cache on the GPU, one more dispatch and wait per layer. They are now read into
+host memory and copied straight into their cache slots: the same bytes in the
+same place, without the scatter.
+
+On the development Mac, paired and interleaved with identical output, the two
+together made decode 1.28x faster at a 10 GB target without the draft head
+and 1.22x faster at 22 GB with the draft head and lookahead, counting only
+pairs with no swap activity. The keepalive costs power: energy per generated
+token rose 7% at 16 GB, so `--gpu-keepalive auto`, the default, runs it only
+on AC power outside Low Power Mode. `--gpu-keepalive off` and
+`SLOTSTREAM_OPT_DIRECT_DEMAND=0` restore the previous behavior. The
+[measurement](../db/records/measurements/decode-perf-2026-09-24.md) has every
+comparison, both screens and the ideas that did not help.
+
 [MEASUREMENTS.md](../MEASUREMENTS.md) includes the configurations, comparisons,
 and failed experiments behind these results.
 
@@ -710,7 +751,8 @@ and failed experiments behind these results.
 
 **Prompt, conversation history, images, and reply share one window, which auto
 picks for each Mac.** It takes the largest of 32,768, 65,536, 131,072 and
-262,144 tokens that keeps speculative decoding, retains one complete
+262,144 tokens that keeps speculative decoding as the 32,768-token plan has
+it, including a draft head's resident experts, retains one complete
 conversation and adds at most 10% to the planner's estimate for a typical
 request. A flat estimate beyond its measured cache range is not evidence that
 extra cache has no value: auto declines reductions in that range and reports
@@ -784,6 +826,12 @@ when space is available. The cache-size and resize gates check byte-identical
 greedy output with the other generation settings fixed. Changing the total
 memory target can also change prefill grouping or enable speculative decoding;
 those are separate changes, not part of that equality claim.
+
+Warm growth also needs room for temporary replacement tensors. The governor
+checks this extra allocation against both the process target and current
+system availability. If it cannot fit, the existing warm cache stays usable
+and growth waits. The copy preserves slot positions and appends capacity one
+tensor at a time, without gathering another copy of all occupied slots.
 
 To set a memory target yourself:
 
@@ -981,8 +1029,21 @@ the Home.
   without a text layer. Sevra recognizes their text on this Mac when a page is
   read, at most 40 pages per request, and marks such citations as recognized
   text.
-- **Folders:** up to 2,000 files. Hidden files, symbolic links and dependency
-  folders such as `node_modules` are skipped and counted, never followed.
+- **Folders:** live access without an upfront scan or a fixed file-count limit.
+  Sevra browses subfolders, finds filenames and searches content as needed.
+  New files, renames and edits appear on subsequent operations. Hidden entries
+  and symbolic links are excluded. Broad searches skip dependency folders such
+  as `node_modules`; Sevra can inspect a specific dependency folder when needed.
+
+Long listings and searches return bounded pages. Sevra can continue from where
+it stopped, including further matches in the same file. If a directory changes
+between pages, Sevra must restart the operation with current names. Search reports
+skipped or unreadable entries instead of treating them as searched. An attachment stays
+usable regardless of the size of its tree. Access remains limited to the files
+or folders you selected.
+
+Without an attachment, Sevra explains how to add one with the paperclip. Thread
+only affects remembered context; attached files remain available in that mode.
 
 Password-protected, damaged and oversized documents are refused with a reason.
 Sevra reads the text inside a document, not its layout; tables and multiple
@@ -1330,6 +1391,16 @@ text model and context fixed while adapting cache residency to the Mac and
 other applications. The recommendation inherits the engine’s measured
 operating ceiling; it is not a promise of optimal performance on every Mac.
 
+Desktop also uses the engine's automatic speculative decoding when the optional
+draft head is installed and its full memory cost fits. Smaller budgets keep
+ordinary decoding. This is independent of **Think longer** and needs no user
+switch. Short chats use smaller prompt-processing batches to create useful
+conversation checkpoints; longer inputs retain the engine's throughput schedule.
+Crossing between schedules can require a fresh read because incompatible
+checkpoints are never reused.
+The [operating-policy record](../db/records/decisions/sevra-app-speed-defaults-2026-09-23.md)
+contains the comparisons, costs and conditions for revising these choices.
+
 **Custom limit** means “use up to” the selected budget within the displayed
 supported range, which comes from this Mac's hardware rather than the automatic
 default. It retains automatic pressure protection. Switching to Custom starts
@@ -1340,9 +1411,17 @@ CPU/GPU memory is counted once.
 If a saved limit exceeds the current Mac's supported range, Settings shows
 the saved value and asks you to lower it or choose Automatic.
 
-The model loads with the first request. **Keep model ready → Automatic**
-releases it after inactivity, with a bounded delay informed by observed
-preparation time and power conditions. **While app is open** favors warm
+The model loads with the first request and verifies the pinned files. Within
+that app session, unchanged files on APFS can reuse the successful verification
+after unloading. File identity, size and modification/change timestamps are
+checked again; changes require fresh hashing. Other filesystems and new app
+launches always hash again. No verification proof is stored on disk. An immediate
+reload lets macOS refresh its memory statistics before sizing the next model,
+so memory just released is not incorrectly counted as still occupied.
+**Keep model ready → Automatic** keeps it loaded while Sevra is in the foreground,
+including while you read or compose. Leaving the foreground starts an inactivity
+interval, with a bounded delay informed by observed preparation time. Memory
+pressure, power saving and sleep can release it sooner. **While app is open** favors warm
 follow-ups but still yields to memory pressure and sleep. **Release memory
 now** preserves saved conversations and personal memory. Ordinary conversations
 can reuse a disposable prompt cache in that Home after a reload. Thinking and
@@ -1364,6 +1443,15 @@ during generation, release/reload, responsive metadata and automatic idle
 release. Follow the same model-process and headroom rules as the real fixture
 below. Full hardware qualification and clean paired performance measurements
 remain separate from these functional checks.
+
+Real cache, response-metrics, thinking and source-tool checks also accept
+`--mtp-profile-gb <budget>` for an explicitly requested MTP performance profile.
+They require the chosen budget plus the ordinary headroom, refuse a profile
+that does not actually enable MTP, and use disposable Homes. The default checks
+retain their small budgets. `--real-speed --memory-gb <budget> --arm <policy>`
+compares complete allocations and checks reused output against a fresh run;
+`--extended` includes a longer inventory. These are development measurements,
+not public hardware qualification.
 
 ## Checks and internal CLI
 
@@ -1445,6 +1533,21 @@ the metallib copied as above and the same memory rules:
 apps/macos/.build/release/sevra-mac-checks --real-metrics \
   --home "$PWD/.build/sevra-disposable-real-metrics"
 ```
+
+The live-source fixture checks the model's explanation of file access, then
+attaches a large disposable folder, locates and cites a file, rediscovers it
+after a rename and edit, and proposes a reviewed change. It verifies the
+approved bytes and undo. Use a new destination and the same memory rules:
+
+```bash
+SEVRA_EXTRACT="$PWD/apps/macos/.build/release/sevra-extract" \
+  apps/macos/.build/release/sevra-mac-checks --real-sources \
+  --home "$PWD/.build/sevra-disposable-real-sources"
+```
+
+Its `receipt.json` records answers, actual tool traces, source excerpts and
+failures. The ordinary checks also cover live navigation and search pagination
+without loading a model; `sevra-mac-checks --sources` runs that group alone.
 
 Slotstream's original CLI, serving APIs, library products and package coordinates
 remain independently usable. This application work does not rename the public
@@ -1889,9 +1992,9 @@ and OpenAI endpoints and the [fx guide](FX.md) for the AI SDK gateway.
 | `--max-prefill-wait <minutes>` | Accepted request to first sampled model token, including queueing, tokenization and images. Default 30 minutes; `0` disables only time. |
 | `--no-elastic` | Pin the cache at its startup size. By default an auto-sized cache resizes between requests as memory pressure changes; explicit sizes are always pinned. |
 | `--no-prefix-cache` | Process each prompt from scratch. Useful for reproducibility comparisons. |
-| `--prefix-cache-dir <dir>` | Also keep conversation states on disk, so a restarted server, or a conversation longer than the in-memory cache holds, resumes from its last committed state instead of processing its prompt again. Off unless set. A state is written after its reply completes. The first write stores the fixed recurrent state and every cached token; each later turn writes the recurrent state plus only the tokens it added, keeps the previous turn's state so that reply can still be regenerated after a restart, and removes older states of the conversation. Files hold the conversation's token ids and model state and are used only by the same binary, model files and settings that wrote them; starting the server removes files from other builds. Requests with images are not written. The prefix conversations share is written too: when a prompt's system message ends 512 tokens or more in, or a prompt shares at least 512 tokens with a state already kept, that head is stored during the prompt's own prefill, rounded down to the prefill pass grid, the 256-token grid by default, so the next conversation with the same system prompt resumes from it, in the same process or after a restart. A shared prefix is kept once, is never replaced by the conversations that extend it, and is listed as such. `slotstream prefix-cache` lists or clears the directory. |
+| `--prefix-cache-dir <dir>` | Also keep conversation states on disk, so a restarted server, or a conversation longer than the in-memory cache holds, resumes from its last committed state instead of processing its prompt again. Off unless set. A state is written after its reply completes. The first write stores the fixed recurrent state and every cached token; each later turn writes the recurrent state plus only the tokens it added, keeps the previous turn's state so that reply can still be regenerated after a restart, and removes older states of the conversation. Files hold the conversation's token ids and model state and are used only by the same binary, model files and settings that wrote them; starting the server removes files from other builds. Requests with images are not written. The prefix conversations share is written too: when a prompt's system message ends 512 tokens or more in, or a prompt shares at least 512 tokens with a state already kept, that head is stored during the prompt's own prefill, rounded down to the prefill pass grid, the 256-token grid by default, so the next conversation with the same system prompt resumes from it, in the same process or after a restart. A shared prefix is kept once, is never replaced by the conversations that extend it, and is listed as such. A file the system cannot read is kept, and the server runs without the disk cache until the file is fixed or the directory cleared. `slotstream prefix-cache` lists or clears the directory. |
 | `--prefix-cache-disk-gb <gb>` | Disk quota for `--prefix-cache-dir` (default 20), applied at startup and before each write. When it is full, states nobody continued go first, then previous-turn states kept for regenerating, then conversations, then the prefixes several conversations start from, least recently used first within each. |
-| `--prefix-cache-min-tokens <n>` | Shortest state written to `--prefix-cache-dir` (default 2048 tokens), for conversation states and shared prefixes alike; a shorter shared prefix is still kept in memory. |
+| `--prefix-cache-min-tokens <n>` | Shortest state written to `--prefix-cache-dir` (default 1024 tokens), for conversation states and shared prefixes alike; a shorter shared prefix is still kept in memory. |
 | `--prefix-cache-max-age-days <days>` | Remove states in `--prefix-cache-dir` unused for this many days (default 30), at startup and before writes. `0` keeps them until the quota needs room. |
 | `--idle-exit <minutes>` | Stop after this many minutes with no request and no registered agent still running (default 0, keep serving). `slotstream launch` starts its server with 30 and registers each agent it opens through `POST /slotstream/clients`. The log says why the server stopped. |
 
@@ -2078,6 +2181,7 @@ With no sizing override, auto sizes the process to the machine (see
 | `--pool-gb <gb>` | Raw expert-pool size (1 GB is about 7.5 experts per layer). |
 | `--vision auto\|on\|off` | Accept images (default `auto`). `auto` loads the image encoder on first use; `on` also requires the checkpoint to contain vision weights; `off` rejects images. |
 | `--mtp auto\|on\|off` | Speculative decode (default `auto`); see [Speculative decode](#speculative-decode). |
+| `--gpu-keepalive auto\|on\|off` | `run` and `serve`: keep the GPU busy while a request generates (default `auto`). Streamed decode leaves the GPU idle between short bursts of work, and an idle GPU lowers its clock and starts the next burst late. A one-thread kernel on its own queue keeps it awake; outputs are unchanged. It costs power: `auto` keeps it on with AC power outside Low Power Mode and off on battery. See [GPU keepalive](ENGINEERING.md#gpu-keepalive-and-direct-demand-reads). |
 | `--max-ram-percent <p>` | Auto only: the largest share of RAM auto may target (default 70). Alone it cannot raise the 33 GB base ceiling plus enabled draft/context charges. With `--memory-limit-gb`, it can further lower that ceiling; without this percentage option the adaptive limit is bounded by hardware and availability. Ignored when a fixed size is given. |
 
 Precedence when several are given: `--experts-per-layer` beats `--pool-gb`,
@@ -2126,6 +2230,9 @@ chronological passes remain the fallback. Explicit prefill and optimization
 controls retain their precedence and validation. With the draft head, the
 [decode lookahead](#decode-lookahead) is on by default too, and so is the
 [split verify attention](#speculative-decode) from 6,144 tokens of context.
+Experts missing from the cache are read into host memory and copied straight
+into their cache slots, without staging arrays or a GPU scatter, and on AC
+power the [GPU keepalive](#memory-options) runs while a request generates.
 
 Prompt checkpoints help only when the token and image history actually
 matches. Use `--no-prefix-cache` for comparisons that require fresh prompt
@@ -2169,6 +2276,9 @@ See
 | `SLOTSTREAM_OPT_VERIFY_SPLIT` | engine | `0` runs the speculative verify pass through the dense attention kernel at every context, the previous behavior. The default splits it into two-row vector-kernel calls from 6,144 tokens of context. |
 | `SLOTSTREAM_OPT_VERIFY_SPLIT_CONTEXT` | engine | Context, in tokens, from which the verify pass splits (default 6144, the measured crossover on the development Mac); `0` splits at every context. |
 | `SLOTSTREAM_OPT_ROW_INVARIANT` | engine | `1` selects the exact mode: the model's small dense matmuls run through one kernel at every row count, and the split verify attention makes one call per row. With `SLOTSTREAM_OPT_VERIFY_SPLIT_CONTEXT=0`, speculative and plain decode give identical output for draft depths up to 4. It changes plain decode's rounding, so it is off by default. |
+| `SLOTSTREAM_MTP_EXPERTS` | planner | `resident` or `streamed` forces where the draft head keeps its 512 experts; unset or `automatic`, they stay resident on a cache of 76 experts per layer or more after the resident charge and stream below it. For comparisons. |
+| `SLOTSTREAM_GPU_KEEPALIVE` | engine | `auto`, `on` or `off`: the default for `--gpu-keepalive`. Any other value is refused. |
+| `SLOTSTREAM_OPT_DIRECT_DEMAND` | engine | `0` reads cache misses through staging arrays and a GPU scatter, the previous path; the default reads them into host memory and copies each record straight into its slot. Both put the same bytes in the same slots. |
 | `SLOTSTREAM_DECODE_BARRIER_LAYERS` | engine | Layers between GPU drains, 1…48. The decode lookahead uses 4; `1` drains after every layer. A pass that could not keep that many layers of experts pinned drains after every layer anyway. |
 | `SLOTSTREAM_EXPERT_PREFETCH_TAP` | engine | `boundary` keeps the 0.2.16 forecast (the layer-boundary router forecast at stride 2) when the correction file is present, charging 373 MiB instead of 409; the configuration 0.2.19 was benchmarked against. Other values belong to the experimental configuration and are for comparisons only. |
 | `SLOTSTREAM_ROOT_DIR` | installer | Install somewhere other than `~/.slotstream`. |
@@ -2204,6 +2314,8 @@ own bounded allocation. `prefix-exact-check` accepts it with `--plan`;
 | `prefix-check` | Conversation prefix reuse is equivalent, bounded, and deterministic. `--slots` (640), `--max-tokens` (24). |
 | `prefix-exact-check` | A continued conversation computes what a cold one does: same tokens and bit-identical prompt logits whether a turn resumed a retained state or read its whole prompt, with reuse still happening, an identical prompt reusing its complete state, an edited history rebuilding, and a second conversation resuming a shared prefix. `--slots` (640), `--max-tokens` (24), `--plan` to run a real memory plan so `--memory-gb` and `--mtp` apply. |
 | `sweep-check` | The prefill sweep (passes of 256 tokens or more) stays inside the prefill-rechunk band against the pool path, is deterministic, gives bit-identical logits on a cold and a warm pool, and leaves the pool consistent after admission. `--slots` (640). |
+| `decode-overlap-check` | Direct demand reads and the GPU keepalive leave output exact: the same ids as the staged reads with the keepalive off, on a cold floor-sized cache, with and without the draft head, and a failed direct read leaves no stale slot. `--tokens` (24). |
+| `draft-stream-check` | A draft head whose experts stream decodes the same ids as a resident head at a 12 GB target, reads and reuses its cached experts, and a failed draft expert read ends only its own request; plain decode with the lookahead decodes the same ids as without it at 10 GB. `--tokens` (32). |
 | `parity` | N truncated layers match the Python reference dumps. `--layers` (4), `--tokens`, `--compare <dir>`, `--out <dir>`. |
 | `template-check` | Renders the chat template for a canned conversation and prints token ids. `--think`. |
 | `ngram-golden` | Prints n-gram row ids for a token sequence, for comparison with Python. `--tokens`. |
@@ -2217,12 +2329,19 @@ own bounded allocation. `prefix-exact-check` accepts it with `--plan`;
   model's draft head, `mtp.safetensors`, which `pull` fetches with the
   weights. The file is optional; downloads can complete without it. `on`
   without the file is an error; `auto`, the default, turns it on when the
-  cache reaches 76 experts per layer after the head's 1.6 GB and context
-  charges, before the separate lookahead reservation. A 21 GB target qualifies
-  at the default context; actual availability and the selected window can
-  keep the head off on a larger Mac. Before 0.2.16 the floor
-  was 120; two drafts later measured 31.7% faster than plain decode on the same
-  memory at 76 per layer
+  cache still reaches 28 experts per layer after the head's charge, before the
+  separate lookahead reservation. A 12 GB target qualifies at the default
+  context; actual availability and the selected window can keep the head off
+  on a larger Mac. On a cache of 76 experts per layer or more after the full
+  1.6 GB charge, the head keeps its 512 experts resident. Below that it reads
+  them from the SSD through a 64-expert cache of its own, which charges 0.4 GB
+  and leaves the rest to the main cache; the output is the same either way.
+  At a 12 GB target the head with streamed experts decoded 1.23x faster than
+  plain decode with the lookahead, where a resident head only tied
+  ([decision](../db/records/decisions/draft-head-streams-its-experts-below-76-per-layer.md)).
+  `SLOTSTREAM_MTP_EXPERTS=resident` or `streamed` forces one placement. Before
+  0.2.16 the floor was 120, and then 76; two drafts measured 31.7% faster
+  than plain decode on the same memory at 76 per layer
   ([decision](../db/records/decisions/draft-head-auto-floor-76-per-layer.md)).
   The floor is separate from draft depth. The historical one-draft measurement
   at the former 28 GB memory target was ×1.24 decode; MEASUREMENTS.md M9
@@ -2274,8 +2393,10 @@ own bounded allocation. `prefix-exact-check` accepts it with `--plan`;
 ### Decode lookahead
 
 From 0.2.16 the decode lookahead runs by default with the draft head when
-the cache reaches the same 76-per-layer floor before the lookahead's own
-reservation. The final printed cache can therefore be smaller. As each layer's
+the cache reaches the head's floor before the lookahead's own reservation.
+Without the head it now runs in plain decode too, from 20 experts per layer
+before its reservation: at a 10 GB target it made plain decode 1.11x faster.
+The final printed cache can therefore be smaller. As each layer's
 routing comes back, the engine reads the model's state after the previous layer's
 attention step, applies the next layer's router to it, corrects the result with a
 small learned table shipped for the checkpoint
@@ -2596,8 +2717,8 @@ type returns 400, and other fields, such as `cache_control`, are ignored.
 Headers such as `anthropic-version` and `anthropic-beta` are not required
 and have no effect.
 
-Messages alternate between `user` and `assistant`; consecutive assistant
-messages are joined. User content is text or blocks: `text`, `image` (a
+Messages alternate between `user` and `assistant`; consecutive messages of
+one role are joined into one turn, as the Messages API treats them. User content is text or blocks: `text`, `image` (a
 `base64` source in JPEG, PNG, GIF or WebP; see [Images](#images)),
 `document`, `search_result` (read as its title, source and text), and
 `tool_result`. A `document` with a plain-text source is read inline; a PDF,
@@ -2612,8 +2733,9 @@ markers have no effect: the server reuses prompts on its own. Image `url` and
 `file` sources return 400, and so does a conversation that ends with an
 assistant message, except in a token count.
 
-Every `tool_use` needs a `tool_result` with its id in the next user message,
-and the results may come in any order. A result's content is text or `text`,
+Every `tool_use` needs a `tool_result` with its id in the next user turn,
+which may span consecutive user messages, and the results may come in any
+order. A result's content is text or `text`,
 `image`, `document`, `search_result` and `tool_reference` blocks (read as
 `Tool available: <name>`); `is_error: true` prefixes the text with `Error:`.
 Tools use `name`, `description` and `input_schema`. Server tools the API runs
@@ -3063,6 +3185,18 @@ original-file verification; an immediate second `verify()` is unnecessary.
 `status()` reports remaining reconstructed model bytes, not compressed wire
 bytes, and permits an absent optional draft head.
 
+`download` fetches the weights only. The 37.5 MB decode-forecast file that
+`slotstream pull` also fetches is optional and makes decode faster; fetch it
+the same way after the weights. A failure is logged and returns `false`
+instead of throwing:
+
+```swift
+for file in TapCorrectionSidecar.files {
+    TapCorrectionSidecar.ensure(modelDir: store.modelDirectory, file: file,
+                                cancellation: cancellation) { line in print(line) }
+}
+```
+
 <a id="what-will-it-do-on-this-mac"></a>
 
 ## Plan memory
@@ -3153,7 +3287,10 @@ used first. `maxAge`
 (30 days by default, `nil` to keep states until the quota needs room) removes
 unused states. Opening the directory removes files from other binaries, models
 or settings, expired and damaged files, and anything over the quota;
-`tier.maintenance` reports what it removed.
+`tier.maintenance` reports what it removed. A file the system refuses to read,
+because of its permissions or an I/O error, is kept: opening throws
+`PersistentPrefixCache.UnreadableFile`, which names it, and `slotstream serve`
+then runs without the disk tier.
 
 The prefix conversations share is kept too, with or without the disk tier.
 While a prompt is processed, the head other conversations will start with is
@@ -4596,7 +4733,7 @@ documentation and the brain.
 
 | Suite | What it covers | Weights | Where |
 |---|---|---|---|
-| `slotstream-checks` (T0/T1) | prefill schedule, context policy, runtime and cache bounds, governor policy, pull integrity, machine planning, HTTP framing and routing, vision geometry, request shaping and the embedding splice, sampler behaviour, persistent prefix policy, state files, rows shared across turns, eviction and directory maintenance | no | CI + local |
+| `slotstream-checks` (T0/T1) | prefill schedule, context policy, runtime and cache bounds, governor policy, pull integrity, machine planning, HTTP framing and routing, vision geometry, request shaping and the embedding splice, sampler behaviour, persistent prefix policy, state files, rows shared across turns, a shared head surviving the conversation's own checkpoint at its boundary, eviction and directory maintenance | no | CI + local |
 | `Tools/static_gates.sh` | shell and python syntax, doc parity, fixture digests, manifest digests, planner gates, installer gates | no | CI |
 | `Tools/sampler_gates.sh` | the sampler against a numpy reference, and the governor's branches | no | CI |
 | `Tools/consumer_smoke.sh` | a package outside the repository can import and use the library | no | CI |
@@ -4892,7 +5029,9 @@ them. Run one model process at a time.
    results. The third is the warm number. If you would rather not run the
    Python one-liner, the JSON carries `eval_count` and `eval_duration` in
    nanoseconds; decode tok/s is the first divided by the second, times a
-   billion.
+   billion. Only decode is printed: the second and third requests reuse the
+   whole prompt, so their prompt timings measure no prefill. Step 5
+   measures prefill.
 
    ```bash
    for i in 1 2 3; do
@@ -4901,7 +5040,7 @@ them. Run one model process at a time.
        "prompt": "Explain how a hash map works, in about 200 words.",
        "stream": false,
        "options": {"temperature": 0, "num_predict": 128}
-     }' | python3 -c 'import json,sys; d=json.load(sys.stdin); print("decode %.2f tok/s, prefill %.1f tok/s" % (d["eval_count"]/d["eval_duration"]*1e9, d["prompt_eval_count"]/d["prompt_eval_duration"]*1e9))'
+     }' | python3 -c 'import json,sys; d=json.load(sys.stdin); print("decode %.2f tok/s" % (d["eval_count"]/d["eval_duration"]*1e9))'
    done
    ```
 
@@ -5500,7 +5639,12 @@ has not yet qualified a replacement full-answer baseline:
 | Same M5 Pro, 0.2.16 configuration at a 20 GB target | 48 GB | 13.47 tok/s |
 | Same M5 Pro, historical 0.2.3 result | 48 GB | ~12 tok/s |
 | Mac mini, M2 (base storage) | 16 GB | 1.41 tok/s |
+| MacBook Pro, M4 Pro | 24 GB | 3.57 tok/s |
 | MacBook Air, M5 | 32 GB | 6.22 tok/s |
+| MacBook Pro, M4 Max | 36 GB | 8.41 tok/s |
+| MacBook Pro, M3 Max | 64 GB | 12.38 tok/s |
+| MacBook Pro, M4 Max | 64 GB | 15.93 tok/s |
+| Same M4 Max, model on a 10 Gb/s external SSD | 64 GB | 2.98 tok/s |
 | MacBook Pro, M5 Max, 0.2.3, auto (34.6 GB target) | 128 GB | ~21–22 tok/s |
 | Same M5 Max, 0.2.3, 48 GB target | 128 GB | ~26.9 tok/s |
 | Same M5 Max, 0.2.3, 73 GB target | 128 GB | ~31.5 tok/s |
@@ -5514,7 +5658,7 @@ configuration. The M5 Pro results are from the author; the
 others are community reports. The M5 Max rows are outside the target range:
 the model fits in memory on that Mac, and engines that keep it resident
 report faster replies there.
-The 18, 24 and 36 GB sizes still need reports, and 8 GB Macs don't run the
+The 18 GB size still needs reports, and 8 GB Macs don't run the
 model. Open the details below for versions, settings, and credits.
 
 <details>
@@ -5526,7 +5670,13 @@ model. Open the details below for versions, settings, and credits.
 | MacBook Pro, M5 Pro | 48 GB | internal, 2 TB | 26.6.2 | 0.2.16 candidate | 20 GB target, two drafts, decode lookahead, ~88 experts/layer | 11.79 to 13.47 tok/s with the lookahead, arm medians over eligible runs from 34 held-out pairs | not measured | not recorded | [@carloslfu](https://github.com/carloslfu), 2026-09-13 |
 | MacBook Pro, M5 Pro | 48 GB | internal, 2 TB | 26.6 | 0.2.3 | auto: 33 GB target, ~152 experts/layer | ~12 tok/s; 12.8 with `--mtp` at a 28 GB memory target | ~220 tok/s at a 4096-token pass (est.) | 32 GB (estimate) | [@carloslfu](https://github.com/carloslfu), 2026-09-02 |
 | Mac mini, M2 | 16 GB | internal, 256 GB | 26.6.2 | 0.2.2 | auto: 10.2 GB target, ~21 experts/layer | **1.41 tok/s** | not measured; `context-check` postdates 0.2.2 | 6.1 GB | [@flol's report](https://github.com/carloslfu/slotstream/issues/5), 2026-09-02 |
+| Same Mac mini, M2 | 16 GB | internal, 256 GB | 26.6.2 | 0.2.3 | auto: 10.7 GB target, ~25 experts/layer | **1.48 tok/s** | 11 tok/s for 8192 tokens (12.1 min) | 8.1 GB RSS on the long prompt | [@flol's re-run](https://github.com/carloslfu/slotstream/issues/5#issuecomment-5525389653), 2026-09-03 |
+| MacBook Pro, M4 Pro | 24 GB | 512 GB; location not specified | 26.6.2 | 0.2.24 | auto: 15.9 GB target, ~53 experts/layer; no draft head or lookahead at this size before 0.2.25 | **3.57 tok/s**; 3.85 to 3.97 in a later round | 93 tok/s for 8192 tokens (18.0 GB target) | 16.6 GB process peak on the long prompt | [@davidcavazos's report](https://github.com/carloslfu/slotstream/issues/41), 2026-09-25 |
 | MacBook Air, M5 | 32 GB | 1 TB; location not specified | 26.6.2 | 0.2.11 | 22 GB target, ~75 experts/layer planned | **6.22 tok/s** | 126.28 tok/s for 8192 tokens, 2048-token passes | 17.75 GB RSS on the long prompt | [@arczhi's report](https://github.com/carloslfu/slotstream/issues/12), 2026-09-07 |
+| MacBook Pro, M4 Max | 36 GB | internal, 1 TB | 26.0.1 | 0.2.22 | auto: 27.1 GB target, ~90 experts/layer | **8.41 tok/s** | 166 tok/s for 8192 tokens (27.1 GB target) | 24.8 GB process peak on the long prompt | [@JohnClarkson's report](https://github.com/carloslfu/slotstream/issues/26), 2026-09-20 |
+| MacBook Pro 14", M3 Max | 64 GB | 512 GB; location not specified | 27.0 | 0.2.18 | auto: 48.1 GB target, ~119 experts/layer | **12.38 tok/s** | 213 tok/s for 8192 tokens (34.6 GB target) | 30.1 GB process peak on the long prompt | [@merken's report](https://github.com/carloslfu/slotstream/issues/20), 2026-09-16 |
+| MacBook Pro 16", M4 Max | 64 GB | internal, 1 TB | 27.0 | 0.2.22 | auto: 48.1 GB target, ~119 experts/layer | **15.93 tok/s** | 270 tok/s for 8192 tokens (34.6 GB target) | 30.1 GB process peak on the long prompt | [@YenHub's report](https://github.com/carloslfu/slotstream/issues/22), 2026-09-19 |
+| Same M4 Max, external SSD | 64 GB | external, 1 TB, USB 3.2 Gen 2 (10 Gb/s) | 27.0 | 0.2.22 | auto: 48.1 GB target, ~119 experts/layer | **2.98 tok/s** | 51 tok/s for 8192 tokens (34.6 GB target) | 30.2 GB process peak on the long prompt | [@YenHub's report](https://github.com/carloslfu/slotstream/issues/23), 2026-09-19 |
 | MacBook Pro 16", M5 Max | 128 GB | internal, 2 TB | 26.6.2 | 0.2.3 | auto: 34.6 GB target, ~152 experts/layer | ~21–22 tok/s with speculative decoding | not measured | not measured; server path only | [@waterliu1981's update](https://github.com/carloslfu/slotstream/issues/6#issuecomment-5520489176), 2026-09-03 |
 | Same M5 Max | 128 GB | internal, 2 TB | 26.6.2 | 0.2.3 | manual: 48 GB target, ~253 experts/layer | ~26.9 tok/s with speculative decoding | not measured | not measured | same report |
 | Same M5 Max | 128 GB | internal, 2 TB | 26.6.2 | 0.2.3 | manual: 73 GB target, ~401–441 experts/layer as reported | ~31.5 tok/s with speculative decoding | not measured | not measured | same report |
@@ -5536,13 +5686,21 @@ M5 Pro figure is a planner estimate, and older reported values do not establish
 the kernel lifetime footprint peak added by the reporting correction. These
 hardware configurations have not been requalified with the new counter.
 
-The 16 GB M2 and 32 GB M5 Air results are below the planner's estimates;
-the 128 GB M5 Max result is above its estimate. The planner uses the M5 Pro
-curve and doesn't model these differences.
+The 16 GB M2 and 32 GB M5 Air results are below the planner's estimates,
+and the 36 GB M4 Max's 8.41 tok/s is just under its ~9. The 64 GB M3 Max and
+the 64 GB M4 Max on its internal SSD are above their ~11 estimate, and the
+128 GB M5 Max result is above its estimate. The planner uses the M5 Pro curve
+and doesn't model these differences.
 
-A 16 GB Mac with a fast SSD would help separate disk speed from memory
-capacity: the existing 16 GB and 48 GB machines differ in both. Reports from
-older chips and external SSDs would also help test the estimates.
+The 64 GB M4 Max separates disk speed from everything else: with the same
+plan and release, it decoded 15.93 tok/s from its internal SSD and 2.98 tok/s
+from a 10 Gb/s USB drive that read 0.9 GB/s. A 16 GB Mac with a fast SSD would
+still help separate disk speed from memory capacity at the small end.
+
+The three 0.2.22 reports ran without the decode-forecast file added in 0.2.19.
+Their logs print `no correction at lookahead/tap-correction-attention-rank128-v1.safetensors`.
+`slotstream pull` fetches the 37.5 MB file; through 0.2.24, the download
+`slotstream run` offers on first use did not.
 
 The Air's long-prompt test explicitly used a 22 GB target with vision and
 speculative decoding off. Its full warm-server command and system load were
@@ -5551,7 +5709,8 @@ moving from 0.2.1 to 0.2.3. Community results have not been independently
 rerun by the author.
 
 Full methods, raw reports, and limits are in [MEASUREMENTS.md](../MEASUREMENTS.md):
-the M5 Pro throughout, the M2 in C1, the M5 Max in C2, and the M5 Air in C3.
+the M5 Pro throughout, the M2 in C1, the M5 Max in C2, the M5 Air in C3, the
+M3 Max in C4, the 64 GB M4 Max in C5 and the 36 GB M4 Max in C6.
 
 ### What the columns mean
 
@@ -5667,9 +5826,9 @@ confidence intervals. Endpoints are rounded outward to whole tok/s.
 
 | Installed RAM | Estimated warm reply speed | Basis and main inference |
 |---|---|---|
-| 16–<24 GB | ~1–6 tok/s | The M2 mini reported 1.41 tok/s; the M5 Pro-based 16/18 GB simulations estimate about 4 to 5.5 tok/s. The upper end has not been measured on a real Mac in this band. |
-| 24–<48 GB | ~6–16 tok/s | The 32 GB M5 Air reported 6.22 tok/s on 0.2.11; the M5 Pro measured 15.86 tok/s on 0.2.19 at a 22 GB process target, rounded outward to 16. That benchmark used different prompt-workspace and cache settings from today's automatic plan. The upper end assumes a comparable chip and SSD; no Mac in this band has been timed on 0.2.19. |
-| 48–<96 GB | ~15–27 tok/s | The lower reference rounds down from the 48 GB M5 Pro's 15.86 tok/s on 0.2.19 at a 22 GB target, below its own 33.6 GB automatic target, whose larger cache has not been timed; the 0.2.16 result at a 20 GB target was 13.47 tok/s, and the older ~12 tok/s result remains historical evidence. The upper end transfers the M5 Max's 26.9 tok/s at a 48 GB process target to a comparable Mac with enough available memory. That run used a 128 GB Mac; it was not a measurement of a 48 GB Mac. |
+| 16–<24 GB | ~1–6 tok/s | The M2 mini reported 1.41 tok/s; the M5 Pro-based 16/18 GB simulations estimate about 3.5 to 5 tok/s before the decode lookahead's gain. The upper end has not been measured on a real Mac in this band. |
+| 24–<48 GB | ~6–16 tok/s | The 32 GB M5 Air reported 6.22 tok/s on 0.2.11; the M5 Pro measured 15.86 tok/s on 0.2.19 at a 22 GB process target, rounded outward to 16. That benchmark used different prompt-workspace and cache settings from today's automatic plan. The upper end assumes a comparable chip and SSD; no Mac in this band has been timed on 0.2.19. The 36 GB M4 Max reported 8.41 tok/s on 0.2.22, inside the range. A 24 GB M4 Pro reported 3.57 tok/s on 0.2.24, below this range: its 512 GB SSD read cold experts at 3.7 GB/s, and before 0.2.25 a 24 GB plan ran without the draft head and decode lookahead; a rerun on 0.2.25 is pending. |
+| 48–<96 GB | ~15–27 tok/s | The lower reference rounds down from the 48 GB M5 Pro's 15.86 tok/s on 0.2.19 at a 22 GB target, below its own 33.6 GB automatic target, whose larger cache has not been timed; the 0.2.16 result at a 20 GB target was 13.47 tok/s, and the older ~12 tok/s result remains historical evidence. A 64 GB M4 Max reported 15.93 tok/s on 0.2.22. A 64 GB M3 Max reported 12.38 tok/s on 0.2.18, below this range; a rerun on the current release is pending. The upper end transfers the M5 Max's 26.9 tok/s at a 48 GB process target to a comparable Mac with enough available memory. That run used a 128 GB Mac; it was not a measurement of a 48 GB Mac. |
 | 96 GB+ | ~20–32 tok/s | The 128 GB M5 Max reported about 21 to 22 tok/s in auto and 31.5 tok/s at a 73 GB process target. Applying this range to other Macs in the band is an estimate. This row is outside Slotstream's target range: the model fits in memory from 96 GB. |
 
 The 96 GB+ row's lower endpoint allows for the same reporter's roughly 20 tok/s
@@ -5682,39 +5841,42 @@ predictions for a single current build. No release-speedup multiplier was
 applied to community reports.
 
 A slow SSD, older chip, different prompt, draft acceptance or memory pressure
-can produce results outside the ranges. More RAM helps only when the engine
-can use it to reduce a bottleneck; the band labels do not establish a causal
+can produce results outside the ranges. The 64 GB M4 Max decoded 2.98 tok/s
+with the model on a 10 Gb/s external drive, far below its band. More RAM
+helps only when the engine can use it to reduce a bottleneck; the band labels do not establish a causal
 speed ranking. In particular, there is no measured performance boundary at
 96 GB. The shared context recommendation reflects the current planning
 guidance, independently of reply speed.
 
 ### Automatic memory plans
 
-The columns were checked against the published 0.2.23 binary. They describe
-the plans in auto mode, which picks the
+The columns were checked against a build of `main` after 0.2.24, which
+streams the draft head's experts on smaller caches and runs the decode
+lookahead in plain decode. They describe the plans in auto mode, which picks the
 context window along with the target and speculative decoding. The draft file
 is available and no other apps hold memory. Simulated RAM is in decimal GB; a
 Mac's marketed memory capacity can produce a different decimal-GB device
 reading and target. Auto picks 32,768 tokens through 32 GB of simulated RAM,
 65,536 at 36 GB, 32,768 at 48 GB, 131,072 at 64 GB and 262,144 from 96 GB.
 
-| Simulated RAM (decimal GB) | Automatic memory target | Speculative decoding | Automatic context window |
-|---|---|---|---|
-| 8 GB | No plan fits | Not applicable | Not applicable |
-| 16 GB | 10 GB | Off | 32,768 |
-| 18 GB | 11.5 GB | Off | 32,768 |
-| 24 GB | 16 GB | Off | 32,768 |
-| 32 GB | 22 GB | On | 32,768 |
-| 36 GB | 25 GB | On | 65,536 |
-| 48 GB | 33.6 GB | On | 32,768 |
-| 64 GB | 43.2 GB | On | 131,072 |
-| 96 or 128 GB | 54.7 GB | On | 262,144 |
+| Simulated RAM (decimal GB) | Automatic memory target | Speculative decoding | Decode lookahead | Automatic context window |
+|---|---|---|---|---|
+| 8 GB | No plan fits | Not applicable | Not applicable | Not applicable |
+| 16 GB | 10 GB | Off | On | 32,768 |
+| 18 GB | 11.5 GB | Off | On | 32,768 |
+| 24 GB | 16 GB | On, experts streamed | On | 32,768 |
+| 32 GB | 22 GB | On | On | 32,768 |
+| 36 GB | 25 GB | On | On | 65,536 |
+| 48 GB | 33.6 GB | On | On | 32,768 |
+| 64 GB | 43.2 GB | On | On | 131,072 |
+| 96 or 128 GB | 54.7 GB | On | On | 262,144 |
 
-Speculative decoding in the source plans includes 0.2.16's decode lookahead.
-These are allocation plans, not measured performance tiers. The matching
-M5 Pro-based warm-decode estimates without speculative decoding are
-~4 tok/s at 16 GB, ~5.5 tok/s at 18 GB and ~8 tok/s at 24 GB of simulated
-RAM. The historical 22 GB benchmark measured 15.86 tok/s on 0.2.19 with two
+These are allocation plans, not measured performance tiers. The planner's
+M5 Pro-based warm-decode estimates for the rows without speculative decoding
+are ~3.5 tok/s at 16 GB and ~5 tok/s at 18 GB of simulated RAM. They leave
+out the decode lookahead, which made plain decode 1.05x to 1.11x faster on
+the development Mac. At 24 GB the draft head now runs with its experts
+streamed. The historical 22 GB benchmark measured 15.86 tok/s on 0.2.19 with two
 drafts at about 100 experts per layer (14.38 with the 0.2.18 forecast).
 Although its total budget matches the 32 GB simulation, its smaller prompt
 passes and disabled prefix cache leave a different expert pool. It does not
@@ -5732,12 +5894,14 @@ development Mac's release speedup to those community figures.
 
 **Auto mode picks the memory target, cache size, speculative decoding and
 context window.** It takes the largest window of 32,768, 65,536, 131,072 or
-262,144 tokens that keeps speculative decoding and the decode lookahead as the
-32,768-token plan has them, keeps one complete conversation of that length for
-follow-up turns, and adds at most 10% to the planner's estimate for a typical
-request of 2,000 prompt tokens and a 400-token reply. `slotstream doctor
+262,144 tokens that keeps speculative decoding, the draft head's resident
+experts and the decode lookahead as the 32,768-token plan has them, keeps
+one complete conversation of that length for follow-up turns, and adds at
+most 10% to the planner's estimate for a typical request of 2,000 prompt
+tokens and a 400-token reply. `slotstream doctor
 --sim-ram <GB>` shows every candidate and its reason. At 24 GB a 65,536-token
-window would add 18%, and at 32 GB it would turn speculative decoding off.
+window would add 22%, and at 32 GB it would stream the draft head's experts,
+whose reads the estimate does not price.
 At 36 GB it adds 9%, as the cache drops from 96 to 75 experts per layer.
 At 48 GB, auto keeps the original cache because its size exceeds the measured
 decode range: the estimate cannot price the loss, even when it reports little
@@ -5750,11 +5914,12 @@ same cache and speed rules before choosing its window. A larger Mac can
 therefore receive a smaller window when widening it would sacrifice cache
 whose performance benefit is unmeasured. `--max-context N` fixes any
 window up to 262,144; on a 32 GB Mac, `--max-context 65536` gives the larger
-window without speculative decoding.
+window with the draft head's experts streamed.
 
 For prompts near 32,768 tokens, the planner estimates about 3 minutes of
 prefill from 24 GB and 6.4 minutes at 16 GB; near 65,536 it estimates
-about 8 minutes from 24 GB. These estimates use the M5 Pro's prefill curve,
+about 9 minutes at 24 GB, where the draft head's experts stream and the
+prefill pass is smaller, and about 8 minutes from 32 GB. These estimates use the M5 Pro's prefill curve,
 not measurements on those memory sizes. The planner's historical prefill
 curve has not been recalibrated for the new read policy; the bounded results
 above cannot supply a multiplier for every pass size, prompt and context.
@@ -5815,6 +5980,147 @@ Version headings can be prepared before publication. The
 determines which version the installer downloads.
 
 ## Unreleased
+
+- The prefix cache's disk tier now writes states from 1,024 tokens instead
+  of 2,048 (`--prefix-cache-min-tokens`). After a restart, a 1,919-token
+  conversation re-read its whole prompt in 45.5 s under the old default and
+  resumed with 6.0 s of prefill under the new one. The servers `slotstream
+  launch` starts and the development Mac app use this default, so Pi's
+  opening prompt of about 1,600 tokens now reaches the disk. Each turn of a
+  conversation between the two lengths now writes its state, about 120 to
+  170 MB, within the same quota. Measured by
+  [@jasen215](https://github.com/jasen215) in
+  [#17](https://github.com/carloslfu/slotstream/issues/17).
+- `slotstream parity --compare` refuses a NaN or infinite value instead of
+  printing `PARITY PASS`. Swift's `max` drops a NaN, so such a dump could
+  pass. By [@Pybsama](https://github.com/Pybsama) in
+  [#31](https://github.com/carloslfu/slotstream/pull/31).
+- `/v1/responses` accepts its own output replayed after parallel tool calls.
+  The model writes a newline between calls, which streams as a message item
+  between them, and a client replaying that output, as Codex does, got a
+  400. By [@Pybsama](https://github.com/Pybsama) in
+  [#32](https://github.com/carloslfu/slotstream/pull/32).
+- Raw downloads (`--transport raw`, source overrides and resumed legacy
+  downloads) honor a server's `Retry-After` and `RateLimit` headers, as
+  compressed downloads have since 0.2.11, instead of retrying after 2 to 8
+  seconds. Each wait is capped at 10 minutes. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#33](https://github.com/carloslfu/slotstream/pull/33).
+- `slotstream prefix-cache --clear` names every file it could not remove and
+  exits with an error, instead of reporting only the files it removed. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#34](https://github.com/carloslfu/slotstream/pull/34).
+- Control+C while `slotstream pull`, or the download `run`, `serve` and
+  `launch` offer on first use, fetches the decode-forecast file now stops
+  the command with exit code 130. The fetch caught the cancellation, so
+  `pull` reported ready and the others went on to load the model. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#36](https://github.com/carloslfu/slotstream/pull/36).
+- Opening the prefix cache directory keeps a file the system refuses to
+  read, because of its permissions or an I/O error, instead of deleting it
+  and the states that depend on it; damaged files are still removed. `serve`
+  then runs without the disk cache and names the file. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#37](https://github.com/carloslfu/slotstream/pull/37).
+- `/v1/messages` joins consecutive messages of one role into one turn, as
+  the Messages API does, so tool results split across adjacent user messages
+  are accepted. By [@Pybsama](https://github.com/Pybsama) in
+  [#40](https://github.com/carloslfu/slotstream/pull/40).
+- The server answers 431 for any request whose headers exceed 64 KiB.
+  Headers of up to 128 KiB were served when their closing blank line arrived
+  in the read that crossed the limit. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#42](https://github.com/carloslfu/slotstream/pull/42).
+- A prefix cache file whose header gives an impossible array length or row
+  range is removed as damaged when the directory opens, instead of crashing
+  the server, the development Mac app or `slotstream prefix-cache` every time
+  they open it. By [@Pybsama](https://github.com/Pybsama) in
+  [#43](https://github.com/carloslfu/slotstream/pull/43).
+
+## 0.2.25 - 2026-09-24
+
+- The GPU stays awake while a request generates. Streamed decode leaves the
+  GPU idle between short bursts of work, and an idle GPU lowers its clock and
+  starts the next burst late; a one-thread kernel on its own command queue now
+  keeps it busy, with outputs unchanged. It costs power, so
+  `--gpu-keepalive auto`, the default, runs it only on AC power outside Low
+  Power Mode; `on` and `off` override it, and `SLOTSTREAM_GPU_KEEPALIVE` sets
+  the default. Saved statistics report `gpuKeptAwake`.
+- Cache misses are read into host memory and copied straight into their cache
+  slots instead of passing through staging arrays and a GPU scatter.
+  `SLOTSTREAM_OPT_DIRECT_DEMAND=0` restores the previous path.
+- Together, on the development Mac with identical output, the two made decode
+  1.28x faster at a 10 GB target without the draft head and 1.22x faster at
+  22 GB with it. `decode-overlap-check` compares both against the previous
+  paths on a cold cache and covers the direct reads' failure recovery.
+- The draft head can stream its experts. On a cache below 76 experts per
+  layer after the head's full 1.6 GB charge, its 512 experts now stay on the
+  SSD and pass through a 64-expert cache of their own, charged 0.4 GB, so the
+  main cache keeps the other 1.2 GB; the output is the same. Automatic mode
+  turns the head on from 28 experts per layer instead of 76, a 12 GB target,
+  so 24 GB Macs now run speculative decoding. At a 12 GB target the head
+  decoded 1.23x faster than plain decode with the lookahead.
+  `SLOTSTREAM_MTP_EXPERTS=resident|streamed` forces a placement and
+  `doctor --json` reports `mtp_streamed_experts`. The automatic context window
+  never trades a resident head for a streamed one, so the draft-head tiers
+  keep their windows; `--max-context 65536` on a 32 GB Mac now keeps
+  speculative decoding with the head's experts streamed, and `--mtp on` fits
+  from an 8.5 GB target.
+- Without the draft head, the decode lookahead now runs in plain decode from
+  20 experts per layer before its charge, including `--mtp off` and installs
+  without the head's file. It made plain decode 1.11x faster at a 10 GB
+  target with identical output. `SLOTSTREAM_OPT_EXPERT_PREFETCH=0` turns it
+  off. Its 373 MiB moves a 48 GB Mac without the head from 152 to 149 experts
+  per layer, inside the measured decode range, so that Mac's automatic window
+  becomes 131,072 tokens.
+- `draft-stream-check` compares a streamed head with a resident one and plain
+  decode with and without the lookahead, and injects a failed draft read.
+
+- The development Mac app attaches folders without a whole-tree scan or a
+  file-count cap. Live directory browsing, filename search and scoped content
+  search discover new and renamed files. Bounded continuations retain matches
+  within a file, detect directory changes and expire under resource pressure.
+  Reads can use a returned ID or a relative path inside the selected folder.
+- Edits require a fresh read after an external file change. Attachment errors
+  no longer offer the unrelated Home-reconciliation action, and the assistant
+  is told how local folder access is granted.
+
+- A shared system prompt kept on disk now survives when its save lands on
+  the conversation's own checkpoint, which happens when the system prompt
+  and the end of the prompt fall in the same prefill pass. The checkpoint
+  was written first, the shared save found it and stopped, and a later turn
+  removed it, so other conversations and restarts read the system prompt
+  again. The head is now upgraded to shared, and a shared save that is
+  skipped or fails is logged. Found and fixed by
+  [@jasen215](https://github.com/jasen215) in
+  [#27](https://github.com/carloslfu/slotstream/pull/27), for
+  [#18](https://github.com/carloslfu/slotstream/issues/18).
+
+- The development Mac app uses automatic speculative decoding when the draft
+  head is available and fits the selected memory budget. Short conversations
+  create earlier reusable checkpoints; longer prompts keep the engine's
+  throughput schedule and all checkpoint provenance checks.
+- Automatic readiness retains a loaded model while you read or compose in
+  the foreground. Background inactivity, memory pressure, power saving and
+  sleep still release it. Reloads within an app session reuse successful pinned
+  verification only when APFS file identity and change timestamps still match.
+  New app launches and changed files require fresh verification. Immediate
+  reloads also wait for macOS's memory-statistics refresh before replanning,
+  preventing stale readings from unnecessarily shrinking the cache.
+- Growing the expert cache preserves slot positions and avoids gathering a
+  second copy of the occupied cache. The live governor also checks temporary
+  replacement memory against the process target and available system memory.
+  When growth cannot fit, it keeps the current warm cache and retries later.
+- The download `slotstream run` offers on first use and the development Mac
+  app's model download now also fetch the 37.5 MB decode-forecast file 0.2.19
+  added. Only `slotstream pull` did, so models downloaded the other ways
+  decoded with the earlier, slower forecast. A model already downloaded
+  without the file still needs one `slotstream pull`: `slotstream doctor` now
+  says when the file is missing, and the engine's startup line names the
+  command. Three community reports on 0.2.22 ran without the file. The
+  library's `WeightStore.download(_:log:)` still fetches the weights only;
+  the [library guide](docs/LIBRARY.md#check-and-download-weights) shows how
+  to fetch the file with `TapCorrectionSidecar.ensure`.
 
 ## 0.2.24 - 2026-09-23
 

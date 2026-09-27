@@ -73,9 +73,9 @@ and OpenAI endpoints and the [fx guide](FX.md) for the AI SDK gateway.
 | `--max-prefill-wait <minutes>` | Accepted request to first sampled model token, including queueing, tokenization and images. Default 30 minutes; `0` disables only time. |
 | `--no-elastic` | Pin the cache at its startup size. By default an auto-sized cache resizes between requests as memory pressure changes; explicit sizes are always pinned. |
 | `--no-prefix-cache` | Process each prompt from scratch. Useful for reproducibility comparisons. |
-| `--prefix-cache-dir <dir>` | Also keep conversation states on disk, so a restarted server, or a conversation longer than the in-memory cache holds, resumes from its last committed state instead of processing its prompt again. Off unless set. A state is written after its reply completes. The first write stores the fixed recurrent state and every cached token; each later turn writes the recurrent state plus only the tokens it added, keeps the previous turn's state so that reply can still be regenerated after a restart, and removes older states of the conversation. Files hold the conversation's token ids and model state and are used only by the same binary, model files and settings that wrote them; starting the server removes files from other builds. Requests with images are not written. The prefix conversations share is written too: when a prompt's system message ends 512 tokens or more in, or a prompt shares at least 512 tokens with a state already kept, that head is stored during the prompt's own prefill, rounded down to the prefill pass grid, the 256-token grid by default, so the next conversation with the same system prompt resumes from it, in the same process or after a restart. A shared prefix is kept once, is never replaced by the conversations that extend it, and is listed as such. `slotstream prefix-cache` lists or clears the directory. |
+| `--prefix-cache-dir <dir>` | Also keep conversation states on disk, so a restarted server, or a conversation longer than the in-memory cache holds, resumes from its last committed state instead of processing its prompt again. Off unless set. A state is written after its reply completes. The first write stores the fixed recurrent state and every cached token; each later turn writes the recurrent state plus only the tokens it added, keeps the previous turn's state so that reply can still be regenerated after a restart, and removes older states of the conversation. Files hold the conversation's token ids and model state and are used only by the same binary, model files and settings that wrote them; starting the server removes files from other builds. Requests with images are not written. The prefix conversations share is written too: when a prompt's system message ends 512 tokens or more in, or a prompt shares at least 512 tokens with a state already kept, that head is stored during the prompt's own prefill, rounded down to the prefill pass grid, the 256-token grid by default, so the next conversation with the same system prompt resumes from it, in the same process or after a restart. A shared prefix is kept once, is never replaced by the conversations that extend it, and is listed as such. A file the system cannot read is kept, and the server runs without the disk cache until the file is fixed or the directory cleared. `slotstream prefix-cache` lists or clears the directory. |
 | `--prefix-cache-disk-gb <gb>` | Disk quota for `--prefix-cache-dir` (default 20), applied at startup and before each write. When it is full, states nobody continued go first, then previous-turn states kept for regenerating, then conversations, then the prefixes several conversations start from, least recently used first within each. |
-| `--prefix-cache-min-tokens <n>` | Shortest state written to `--prefix-cache-dir` (default 2048 tokens), for conversation states and shared prefixes alike; a shorter shared prefix is still kept in memory. |
+| `--prefix-cache-min-tokens <n>` | Shortest state written to `--prefix-cache-dir` (default 1024 tokens), for conversation states and shared prefixes alike; a shorter shared prefix is still kept in memory. |
 | `--prefix-cache-max-age-days <days>` | Remove states in `--prefix-cache-dir` unused for this many days (default 30), at startup and before writes. `0` keeps them until the quota needs room. |
 | `--idle-exit <minutes>` | Stop after this many minutes with no request and no registered agent still running (default 0, keep serving). `slotstream launch` starts its server with 30 and registers each agent it opens through `POST /slotstream/clients`. The log says why the server stopped. |
 
@@ -262,6 +262,7 @@ With no sizing override, auto sizes the process to the machine (see
 | `--pool-gb <gb>` | Raw expert-pool size (1 GB is about 7.5 experts per layer). |
 | `--vision auto\|on\|off` | Accept images (default `auto`). `auto` loads the image encoder on first use; `on` also requires the checkpoint to contain vision weights; `off` rejects images. |
 | `--mtp auto\|on\|off` | Speculative decode (default `auto`); see [Speculative decode](#speculative-decode). |
+| `--gpu-keepalive auto\|on\|off` | `run` and `serve`: keep the GPU busy while a request generates (default `auto`). Streamed decode leaves the GPU idle between short bursts of work, and an idle GPU lowers its clock and starts the next burst late. A one-thread kernel on its own queue keeps it awake; outputs are unchanged. It costs power: `auto` keeps it on with AC power outside Low Power Mode and off on battery. See [GPU keepalive](ENGINEERING.md#gpu-keepalive-and-direct-demand-reads). |
 | `--max-ram-percent <p>` | Auto only: the largest share of RAM auto may target (default 70). Alone it cannot raise the 33 GB base ceiling plus enabled draft/context charges. With `--memory-limit-gb`, it can further lower that ceiling; without this percentage option the adaptive limit is bounded by hardware and availability. Ignored when a fixed size is given. |
 
 Precedence when several are given: `--experts-per-layer` beats `--pool-gb`,
@@ -310,6 +311,9 @@ chronological passes remain the fallback. Explicit prefill and optimization
 controls retain their precedence and validation. With the draft head, the
 [decode lookahead](#decode-lookahead) is on by default too, and so is the
 [split verify attention](#speculative-decode) from 6,144 tokens of context.
+Experts missing from the cache are read into host memory and copied straight
+into their cache slots, without staging arrays or a GPU scatter, and on AC
+power the [GPU keepalive](#memory-options) runs while a request generates.
 
 Prompt checkpoints help only when the token and image history actually
 matches. Use `--no-prefix-cache` for comparisons that require fresh prompt
@@ -353,6 +357,9 @@ See
 | `SLOTSTREAM_OPT_VERIFY_SPLIT` | engine | `0` runs the speculative verify pass through the dense attention kernel at every context, the previous behavior. The default splits it into two-row vector-kernel calls from 6,144 tokens of context. |
 | `SLOTSTREAM_OPT_VERIFY_SPLIT_CONTEXT` | engine | Context, in tokens, from which the verify pass splits (default 6144, the measured crossover on the development Mac); `0` splits at every context. |
 | `SLOTSTREAM_OPT_ROW_INVARIANT` | engine | `1` selects the exact mode: the model's small dense matmuls run through one kernel at every row count, and the split verify attention makes one call per row. With `SLOTSTREAM_OPT_VERIFY_SPLIT_CONTEXT=0`, speculative and plain decode give identical output for draft depths up to 4. It changes plain decode's rounding, so it is off by default. |
+| `SLOTSTREAM_MTP_EXPERTS` | planner | `resident` or `streamed` forces where the draft head keeps its 512 experts; unset or `automatic`, they stay resident on a cache of 76 experts per layer or more after the resident charge and stream below it. For comparisons. |
+| `SLOTSTREAM_GPU_KEEPALIVE` | engine | `auto`, `on` or `off`: the default for `--gpu-keepalive`. Any other value is refused. |
+| `SLOTSTREAM_OPT_DIRECT_DEMAND` | engine | `0` reads cache misses through staging arrays and a GPU scatter, the previous path; the default reads them into host memory and copies each record straight into its slot. Both put the same bytes in the same slots. |
 | `SLOTSTREAM_DECODE_BARRIER_LAYERS` | engine | Layers between GPU drains, 1…48. The decode lookahead uses 4; `1` drains after every layer. A pass that could not keep that many layers of experts pinned drains after every layer anyway. |
 | `SLOTSTREAM_EXPERT_PREFETCH_TAP` | engine | `boundary` keeps the 0.2.16 forecast (the layer-boundary router forecast at stride 2) when the correction file is present, charging 373 MiB instead of 409; the configuration 0.2.19 was benchmarked against. Other values belong to the experimental configuration and are for comparisons only. |
 | `SLOTSTREAM_ROOT_DIR` | installer | Install somewhere other than `~/.slotstream`. |
@@ -388,6 +395,8 @@ own bounded allocation. `prefix-exact-check` accepts it with `--plan`;
 | `prefix-check` | Conversation prefix reuse is equivalent, bounded, and deterministic. `--slots` (640), `--max-tokens` (24). |
 | `prefix-exact-check` | A continued conversation computes what a cold one does: same tokens and bit-identical prompt logits whether a turn resumed a retained state or read its whole prompt, with reuse still happening, an identical prompt reusing its complete state, an edited history rebuilding, and a second conversation resuming a shared prefix. `--slots` (640), `--max-tokens` (24), `--plan` to run a real memory plan so `--memory-gb` and `--mtp` apply. |
 | `sweep-check` | The prefill sweep (passes of 256 tokens or more) stays inside the prefill-rechunk band against the pool path, is deterministic, gives bit-identical logits on a cold and a warm pool, and leaves the pool consistent after admission. `--slots` (640). |
+| `decode-overlap-check` | Direct demand reads and the GPU keepalive leave output exact: the same ids as the staged reads with the keepalive off, on a cold floor-sized cache, with and without the draft head, and a failed direct read leaves no stale slot. `--tokens` (24). |
+| `draft-stream-check` | A draft head whose experts stream decodes the same ids as a resident head at a 12 GB target, reads and reuses its cached experts, and a failed draft expert read ends only its own request; plain decode with the lookahead decodes the same ids as without it at 10 GB. `--tokens` (32). |
 | `parity` | N truncated layers match the Python reference dumps. `--layers` (4), `--tokens`, `--compare <dir>`, `--out <dir>`. |
 | `template-check` | Renders the chat template for a canned conversation and prints token ids. `--think`. |
 | `ngram-golden` | Prints n-gram row ids for a token sequence, for comparison with Python. `--tokens`. |
@@ -401,12 +410,19 @@ own bounded allocation. `prefix-exact-check` accepts it with `--plan`;
   model's draft head, `mtp.safetensors`, which `pull` fetches with the
   weights. The file is optional; downloads can complete without it. `on`
   without the file is an error; `auto`, the default, turns it on when the
-  cache reaches 76 experts per layer after the head's 1.6 GB and context
-  charges, before the separate lookahead reservation. A 21 GB target qualifies
-  at the default context; actual availability and the selected window can
-  keep the head off on a larger Mac. Before 0.2.16 the floor
-  was 120; two drafts later measured 31.7% faster than plain decode on the same
-  memory at 76 per layer
+  cache still reaches 28 experts per layer after the head's charge, before the
+  separate lookahead reservation. A 12 GB target qualifies at the default
+  context; actual availability and the selected window can keep the head off
+  on a larger Mac. On a cache of 76 experts per layer or more after the full
+  1.6 GB charge, the head keeps its 512 experts resident. Below that it reads
+  them from the SSD through a 64-expert cache of its own, which charges 0.4 GB
+  and leaves the rest to the main cache; the output is the same either way.
+  At a 12 GB target the head with streamed experts decoded 1.23x faster than
+  plain decode with the lookahead, where a resident head only tied
+  ([decision](../db/records/decisions/draft-head-streams-its-experts-below-76-per-layer.md)).
+  `SLOTSTREAM_MTP_EXPERTS=resident` or `streamed` forces one placement. Before
+  0.2.16 the floor was 120, and then 76; two drafts measured 31.7% faster
+  than plain decode on the same memory at 76 per layer
   ([decision](../db/records/decisions/draft-head-auto-floor-76-per-layer.md)).
   The floor is separate from draft depth. The historical one-draft measurement
   at the former 28 GB memory target was ×1.24 decode; MEASUREMENTS.md M9
@@ -458,8 +474,10 @@ own bounded allocation. `prefix-exact-check` accepts it with `--plan`;
 ### Decode lookahead
 
 From 0.2.16 the decode lookahead runs by default with the draft head when
-the cache reaches the same 76-per-layer floor before the lookahead's own
-reservation. The final printed cache can therefore be smaller. As each layer's
+the cache reaches the head's floor before the lookahead's own reservation.
+Without the head it now runs in plain decode too, from 20 experts per layer
+before its reservation: at a 10 GB target it made plain decode 1.11x faster.
+The final printed cache can therefore be smaller. As each layer's
 routing comes back, the engine reads the model's state after the previous layer's
 attention step, applies the next layer's router to it, corrects the result with a
 small learned table shipped for the checkpoint

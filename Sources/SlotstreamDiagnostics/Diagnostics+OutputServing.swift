@@ -282,7 +282,7 @@ extension Diagnostics {
             throw ModelError("HTTP governor recovery requires a real memory reading")
         }
         let recovery = stride(from: 0.0, through: min(10, available), by: 0.125).first { value in
-            let inputs = GovernorPolicy.Inputs(currentSlots: engine.poolSnapshot().slots,
+            var inputs = GovernorPolicy.Inputs(currentSlots: engine.poolSnapshot().slots,
                 availableGB: value, ramGB: current.ramGB, workingSetGB: current.workingSetGB,
                 ramPercent: current.ramPercent, secondsSincePressure: 0,
                 mtpEnabled: current.mtpEnabled, visionEnabled: current.visionEnabled,
@@ -290,6 +290,7 @@ extension Diagnostics {
                 maxContextTokens: current.maxContextTokens,
                 runtimeAllocationPolicy: current.runtimeAllocationPolicy,
                 contextQualification: current.contextQualification)
+            inputs.mtpStreamedExperts = current.mtpStreamedExperts
             return GovernorPolicy.desiredPlan(inputs) != nil && GovernorPolicy.decide(inputs) == .hold
         }
         guard let recovery else { throw ModelError("no bounded feasible HTTP governor recovery is available") }

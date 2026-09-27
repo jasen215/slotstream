@@ -2,11 +2,11 @@
 type: claim
 id: 01m1hhwp6pvmv6ewjddfjm9xmc
 created: 2026-09-02T17:15:28.342139+00:00
-updated: 2026-09-13T16:42:28.558061+00:00
+updated: 2026-09-24T19:15:21.320583+00:00
 summary: Small-memory planner estimates use the M5 Pro curve; README has broader ranges
 basis: estimated
 gate: Tools/planner_gates.sh
-needle: ~4 tok/s
+needle: ~3.5 tok/s
 supported_by:
 - '[[records/measurements/warm-decode-re-anchored-and-the-live-governor-finally-observed-2026-08]]'
 - '[[records/measurements/the-auto-memory-target-70-of-ram-was-the-wrong-shape-2026-08-31]]'
@@ -51,3 +51,7 @@ estimate remains in llms.txt and the hardware guide with its limitations;
 it no longer owns the README range table. Construction and unmeasured
 hardware transfers are in
 [[records/measurements/hardware-planning-ranges-2026-09-13]].
+
+## Lookahead reservation, 2026-09-24
+
+Without the draft head the decode lookahead now runs in plain decode from 20 experts per layer before its charge ([[records/decisions/decode-lookahead-in-plain-decode]]). Its reservation shrinks the 16 GB row's cache from 20 to 17 experts per layer, and the curve, which leaves the lookahead's gain out, now estimates 3.42 tok/s there instead of 3.73. The needle moves from ~4 to ~3.5 tok/s and the 18 GB estimate from ~5.5 to ~5; HARDWARE.md now says the estimates leave the lookahead out and quotes its measured plain-decode gain of 1.05x to 1.11x beside them.

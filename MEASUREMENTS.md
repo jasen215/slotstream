@@ -2479,6 +2479,39 @@ sequential ceiling has far less of that to give. The prediction on record is
 that this machine gains from the grouped GEMM's share of the pass and little
 from the reads — well under the dev Mac's 2x.
 
+## The 0.2.3 re-run, recorded 2026-09-24
+
+`@flol` re-ran the whole procedure on 0.2.3 the day after the first report,
+built from source, and posted it as a
+[comment on issue #5](https://github.com/carloslfu/slotstream/issues/5#issuecomment-5525389653).
+It was not recorded at the time. The raw text is in
+[[sources/community/2026/09/2026-09-03-mac-mini-m2-16gb-flol-0-2-3-rerun]].
+
+| | 0.2.2 report above | 0.2.3 re-run |
+|---|---|---|
+| Auto plan | 10.2 GB target, ~21 experts per layer | 10.7 GB target, ~25 experts per layer |
+| Warm decode, three identical requests | 1.41 tok/s | **1.48 tok/s** |
+| Cold decode, 128 tokens | 1.39 tok/s | 1.42 tok/s |
+| Cold reads, 28-token prefill | 13.2 GB at 1.5 GB/s | 13.2 GB at 1.5 GB/s |
+| Long prompt, 8,192 tokens | step failed | **12.1 min, 11 tok/s**; peak RSS 8.1 GB against a 9.7 GB plan |
+
+For the re-run the reporter closed every other app and heard no fans; 12.9 of
+17 GB was reclaimable, against 11.7 GB for the first report, so auto planned a
+slightly larger cache.
+
+**The long prompt is the number this section asked for.** 8,192 tokens took
+12.1 min, 7.6 times the ~1.6 min the planner printed before starting; its
+prefill estimate of ~85 tok/s has the same missing bandwidth term as the
+decode estimate. Once passes were running, the progress lines' remaining-time
+estimates (8.4, 5.7 and 2.9 min) followed the actual pace.
+
+**What it does not settle.** The prediction above, that this machine gains
+little from the sweep's reads, needs a long-prompt time on 0.2.2 to compare
+with, and 0.2.2 could not run `context-check`. Warm decode moved from 1.41 to
+1.48 tok/s with a slightly larger cache, inside the run-to-run spread, so it
+is not a speedup claim. The hardware table keeps the 0.2.2 row and adds this
+run beside it.
+
 ## C2: MacBook Pro M5 Max, 128 GB (community, 2026-09-03)
 Reported by `@waterliu1981` in [issue #6](https://github.com/carloslfu/slotstream/issues/6).
 The original report and its follow-up are preserved in
@@ -2578,6 +2611,153 @@ published v0.2.11 source, but did not independently rerun the reporter's binary.
 This adds a real 32 GB Mac to the hardware reports. It does not turn the
 planner's roughly 9 tok/s estimate into a measurement, or isolate the effects
 of chip, cooling, storage, context, and settings from one another.
+
+## C4: MacBook Pro M3 Max, 64 GB (community, 2026-09-16)
+Reported by `@merken` in [issue #20](https://github.com/carloslfu/slotstream/issues/20),
+preserved in [[sources/community/2026/09/2026-09-16-macbook-pro-m3-max-64gb-merken]].
+
+MacBook Pro 14-inch (2023), M3 Max (`applegpu_g15s`), 64 GB, 512 GB SSD,
+macOS 27.0, Slotstream 0.2.18. The report does not say whether the SSD is
+internal or describe other load. Auto planned a 48.1 GB target with about 119
+experts per layer, speculative decoding, the decode lookahead and a
+262,144-token window.
+
+| | Reported |
+|---|---|
+| Warm decode, three identical requests | 11.68, 12.49 and **12.38 tok/s** |
+| Cold decode, 128 tokens | 11.47 tok/s; 74 of 106 drafts accepted |
+| Cold reads, 18-token prefill | 9.4 GB of experts at 6.1 GB/s |
+| Long prompt, 8,192 tokens at context-check's 34.6 GB target | 39 s, **213 tok/s**; process peak 30.1 GB against a 33.6 GB plan |
+
+The hardware row uses **12.38 tok/s**, the third request. The planner
+estimated about 11 tok/s for the served plan. The warm requests' prefill rates
+of about 34 million tok/s are an artifact of the measurement recipe, not a
+prefill result: the repeated prompt was reused whole, and `prompt_eval_count`
+counts reused tokens while `prompt_eval_duration` times only what was read.
+
+**Below the band's estimated floor.** This is the first report from a Mac
+with 48 to less than 96 GB other than the development Mac, and it sits below
+the ~15 tok/s floor the README gives that band. The 64 GB M4 Max in
+[[records/measurements/c5-macbook-pro-m4-max-64gb-community]] ran the same
+auto plan and, by its logs, the same pre-0.2.19 decode forecast, and decoded
+at 15.93 tok/s. The cold decode splits put the difference in both parts of the
+step: reads took 4.00 s here against 2.69 s there, over 5,351 records against
+4,424, and the rest of the step took 7.1 s against 5.6 s. That points at the
+older chip and the smaller SSD more than the release, though the two runs also
+differ in release (0.2.18 and 0.2.22) and neither was rerun. The 1.10x that
+0.2.19's corrected forecast measured on the development Mac has not run here.
+The floor stays until this Mac is rerun on the current release, with
+`slotstream pull` run first; the hardware guide names this report beside the
+range.
+
+One report, one run of each step, not rerun by the author.
+
+## C5: MacBook Pro M4 Max, 64 GB, internal and external SSD (community, 2026-09-19)
+Reported by `@YenHub` in [issue #22](https://github.com/carloslfu/slotstream/issues/22)
+(internal SSD) and [issue #23](https://github.com/carloslfu/slotstream/issues/23)
+(external SSD), preserved in
+[[sources/community/2026/09/2026-09-19-macbook-pro-m4-max-64gb-internal-yenhub]]
+and [[sources/community/2026/09/2026-09-19-macbook-pro-m4-max-64gb-external-yenhub]].
+The same reporter proposed the hardware rows in
+[pull request #25](https://github.com/carloslfu/slotstream/pull/25).
+
+MacBook Pro 16-inch (November 2024), M4 Max (`applegpu_g16s`), 64 GB,
+macOS 27.0, Slotstream 0.2.22, each run after a fresh reboot with only a
+terminal open. Both reports used the same auto plan: a 48.1 GB target with
+about 119 experts per layer, speculative decoding, the decode lookahead and a
+262,144-token window. The first read the model from the internal 1 TB SSD, the
+second from a Crucial X10 Pro 1 TB external SSD over USB 3.2 Gen 2 (10 Gb/s).
+
+| | Internal SSD | External SSD |
+|---|---|---|
+| Warm decode, three identical requests | 14.95, 16.22 and **15.93 tok/s** | 2.81, 3.04 and **2.98 tok/s** |
+| Cold decode, 128 tokens | 15.30 tok/s | 2.89 tok/s |
+| Cold reads, 28-token prefill | 13.2 GB at 7.6 GB/s | 13.2 GB at 0.9 GB/s |
+| Long prompt, 8,192 tokens at context-check's 34.6 GB target | 30 s, **270 tok/s**; process peak 30.1 GB | 2.7 min, **51 tok/s**; process peak 30.2 GB |
+
+The rows use the third requests, 15.93 and 2.98 tok/s. The warm prefill rates
+in the millions of tok/s are the recipe artifact described in
+[[records/measurements/c4-macbook-pro-m3-max-64gb-community]].
+
+**Same Mac, plan and release, 5.3 times slower from a 10 Gb/s drive.** This is
+the first pair in the store that isolates the disk. The external drive read
+0.9 GB/s against the internal SSD's 7.6 GB/s, warm decode fell from 15.93 to
+2.98 tok/s, and the long prompt fell by the same factor, from 270 to 51 tok/s.
+The planner assumes a disk like the development Mac's and printed about
+11 tok/s for both.
+
+**Both runs used the pre-0.2.19 decode forecast.** Each context-check log
+prints `[expert-lookahead] boundary forecast: no correction at
+lookahead/tap-correction-attention-rank128-v1.safetensors`: the 37.5 MB
+correction file was absent, so the engine ran the earlier forecast. Through
+0.2.24 only `slotstream pull` fetched that file; a model downloaded before
+0.2.19, or through the download `slotstream run` offers on first use, lacked
+it.
+0.2.19's 1.10x was measured on the development Mac with the file present and
+is not applied to these numbers.
+
+One reporter, one run of each step on each disk, not rerun by the author.
+
+## C6: MacBook Pro M4 Max, 36 GB (community, 2026-09-20)
+Reported by `@JohnClarkson` in [issue #26](https://github.com/carloslfu/slotstream/issues/26),
+preserved in [[sources/community/2026/09/2026-09-20-macbook-pro-m4-max-36gb-johnclarkson]].
+
+MacBook Pro (November 2024), M4 Max (`applegpu_g16s`), 36 GB, internal 1 TB
+SSD, macOS 26.0.1, Slotstream 0.2.22, run just after a reboot with a terminal
+and one screen-sharing window open. Auto planned a 27.1 GB target with about
+90 experts per layer, speculative decoding, the decode lookahead and a
+65,536-token window.
+
+| | Reported |
+|---|---|
+| Warm decode, three identical requests | 8.48, 8.61 and **8.41 tok/s** |
+| Cold decode, 128 tokens | 8.63 tok/s; 74 of 106 drafts accepted |
+| Cold reads, 28-token prefill | 13.2 GB of experts at 5.5 GB/s |
+| Long prompt, 8,192 tokens at context-check's 27.1 GB target (about 121 experts per layer) | 49 s, **166 tok/s**; process peak 24.8 GB against a 26.1 GB plan |
+
+The hardware row uses **8.41 tok/s**, the third request; the planner
+estimated about 9 tok/s. This is the first 36 GB report. Like
+[[records/measurements/c5-macbook-pro-m4-max-64gb-community]], its
+context-check log prints `no correction at
+lookahead/tap-correction-attention-rank128-v1.safetensors`, so it ran the
+pre-0.2.19 decode forecast. The warm prefill rates in the millions of tok/s
+are the recipe artifact described in
+[[records/measurements/c4-macbook-pro-m3-max-64gb-community]].
+
+One report, one run of each step, not rerun by the author.
+
+## C7: MacBook Pro M4 Pro, 24 GB (community, 2026-09-25)
+Reported by `@davidcavazos` in [issue #41](https://github.com/carloslfu/slotstream/issues/41),
+preserved in [[sources/community/2026/09/2026-09-25-macbook-pro-m4-pro-24gb-davidcavazos]].
+
+MacBook Pro (2024), M4 Pro (`applegpu_g16s`), 24 GB, 512 GB SSD, macOS 26.6.2,
+Slotstream 0.2.24, run after a fresh boot with one or two terminals, Safari,
+Stats and Activity Monitor open, and no swap before or after. Auto planned a
+15.9 GB target, sized down from the usual 18.0 GB because 17.4 GB was
+reclaimable, with about 53 experts per layer and a 32,768-token window. At
+that window the 0.2.24 plan ran without the draft head and without the decode
+lookahead.
+
+| | Reported |
+|---|---|
+| Warm decode, three identical requests | 3.61, 3.52 and **3.57 tok/s** |
+| A second warm round, posted later | 3.85, 3.97 and 3.95 tok/s |
+| Cold decode, 128 tokens | 3.17 tok/s |
+| Cold reads, 28-token prefill | 13.1 GB of experts at 3.7 GB/s |
+| Long prompt, 8,192 tokens at context-check's 18.0 GB target (about 78 experts per layer) | 1.5 min, **93 tok/s**; process peak 16.6 GB against a 17.0 GB plan |
+
+The hardware row uses **3.57 tok/s**, the third request of the first round;
+the planner estimated about 8 tok/s. This is the first 24 GB report, and it
+falls below the 24 to less than 48 GB planning range of ~6–16 tok/s. Two known
+differences from the development Mac may account for the gap. The planner
+assumes an SSD like the development Mac's 17.3 GB/s, while this 512 GB SSD read
+cold experts at 3.7 GB/s. And 0.2.25 enables the draft head, with streamed
+experts, and the decode lookahead at 24 GB, which 0.2.24 did not. A rerun on
+0.2.25 would separate the two. While using the server from Pi, the reporter
+saw disk reads of about 2 GB/s; the server reported no tok/s there.
+
+One report: two warm rounds and one run of each other step, not rerun by the
+author.
 
 ## Decode: where the time goes, and the two knobs that moved it (2026-09-03)
 Decode had no equivalent of the prefill split, so "decode is slow" could not be
@@ -4931,6 +5111,41 @@ The new calibration attempt, retained raw observations, stricter prospective
 host-load screen and remaining gaps are recorded in
 [[records/measurements/release-speed-calibration-2026-09-22]].
 
+## Reports from 36 and 64 GB Macs, 2026-09-24
+
+Three community reports added real Macs to the two middle bands
+([[records/measurements/c4-macbook-pro-m3-max-64gb-community]],
+[[records/measurements/c5-macbook-pro-m4-max-64gb-community]] and
+[[records/measurements/c6-macbook-pro-m4-max-36gb-community]]):
+
+- 24 to less than 48 GB: a 36 GB M4 Max reported 8.41 tok/s on 0.2.22, inside
+  ~6–16 tok/s.
+- 48 to less than 96 GB: a 64 GB M4 Max reported 15.93 tok/s on 0.2.22, and a
+  64 GB M3 Max 12.38 tok/s on 0.2.18, both from internal SSDs with the same
+  auto plan. The M3 Max sits below the ~15 floor. Its report predates 0.2.19,
+  so the floor stays ~15 until a rerun on the current release, with
+  `slotstream pull` run first, says whether the gap is the release or the
+  hardware. C4 records why the release is unlikely to close it: the M4 Max
+  ran the same pre-0.2.19 forecast and still decoded faster. The public range
+  names the M3 Max report beside it.
+- The same M4 Max decoded at 2.98 tok/s from a 10 Gb/s external drive. The
+  ranges assume the model on a fast internal SSD; that result is the slow-SSD
+  case described above, not a band endpoint.
+
+No release-speedup multiplier was applied to the community reports.
+
+## A 24 GB report, 2026-09-26
+
+- 24 to less than 48 GB: a 24 GB M4 Pro reported 3.57 tok/s on 0.2.24
+  ([[records/measurements/c7-macbook-pro-m4-pro-24gb-community]]), below the
+  ~6 floor, and 3.85 to 3.97 tok/s in a later round. Two known differences may
+  account for the gap. Its 512 GB SSD read cold experts at 3.7 GB/s, well below
+  the development Mac's 17.3 GB/s, and the ranges assume a fast internal SSD.
+  And on 0.2.24 a 24 GB plan ran without the draft head and decode lookahead,
+  which 0.2.25 enables at that size. The floor stays ~6 until a rerun on 0.2.25
+  separates the release from the hardware; the public range names the report
+  beside it.
+
 ## Automatic context window: plans by Mac memory
 Weights-free checks and simulated `doctor` plans for the candidate that picks the context window for each Mac ([[records/plan/configurable-context-window-2026-09-06]]). Carlos asked on 2026-09-13 for auto to choose the best window for every memory tier and for `--max-context` to accept the model's 262,144 tokens, using best guesses from what the development Mac can measure. No model process ran for these plans, and nothing here is timed.
 
@@ -6316,3 +6531,223 @@ The shared-desktop screen accepted 68/72 requests. The stricter no-global-paging
 No measured family meets the timing claim threshold. The one-token warmup mechanically meets the analyzer's pair count, but is explicitly excluded from all speed claims. All loaded/paging captures remain preserved rather than cherry-picked. The final audit replayed all 72 captures, checked the frozen inputs, and verified all 12 server processes exited zero and were reaped.
 
 The README throughput anchors and hardware estimates remain unchanged. Establishing a new general speed percentage requires three clean matched pairs with equivalent work; the corrected branch alone cannot provide that comparison. This patch contains no new inference computation optimization. The earlier long-prompt and fused-attention gains remain scoped to their own studies and must not be combined with these counts.
+
+### Sevra desktop speed: short-turn rereads and disabled MTP
+**The actual development app wrote substantial replies at 10.5 to 12.6 tok/s, but spent 4.7 to 8.1 seconds before its first token.** Prompt processing dominates the delay in the short final reply. These are observed live-session timings, not new clean-host throughput anchors. Raw receipts: [[sources/runs/2026/09/2026-09-23-sevra-app-speed]].
+
+| App request | Output tokens | Writing tok/s | First token, excluding load | Prompt tokens read / reused |
+| --- | --- | --- | --- | --- |
+| Bicycle explanation, first request | 258 | 12.53 | 4.68 s | 143 / 0 |
+| Rain explanation, warm | 304 | 10.46 | 6.94 s | 451 / 0 |
+| RAM/SSD explanation, warm | 271 | 12.58 | 5.65 s | 808 / 0 |
+| Brief greeting, warm | 2 | Not a steady-speed sample | 8.13 s | 1101 / 0 |
+
+The first request also loaded the model for 9.05 seconds. The final greeting spent 8.10 seconds reading context and 0.39 seconds generating its two tokens. The app's displayed rate correctly excludes prompt reading and model load; the tiny final denominator should not be read as steady throughput. All runs used a 33 GB automatic budget, context 32768 and thinking off. Expert hit rates for the substantial replies were 92.4%, 94.0% and 93.5%. No thermal or low-power restriction was observed. Some global swap-ins occurred, so these results are diagnostic.
+
+## Concrete integration gaps
+
+1. The launched app is an older development bundle, built September 21. Its embedded engine version declaration is 0.2.22, with additional then-uncommitted work. The public CLI update to 0.2.24 does not rebuild or replace the app's statically linked engine. Its manifest differs from current engine inputs. This establishes a stale integration, not a measured causal slowdown from every changed file.
+2. Desktop's `PerformancePolicy.plan` explicitly requests `mtp: .off`. That source matches the running app's recorded input. The app therefore does not get speculative decoding; this is independent of the Think longer control.
+3. Numerical-safe reuse admits only compatible complete compute-pass boundaries. A short prompt that ends inside a large pass supplies no eligible continuation boundary. All four observed app turns reused zero tokens. The present equivalent 33 GB MTP-off engine plan chooses 4096-token passes, illustrating the mismatch between long-prompt efficiency and short-conversation reuse. The old app's exact pass size was not directly instrumented, so that current plan is explanatory evidence, not a reconstructed live plan.
+4. Automatic readiness releases the model after about ten idle minutes in this configuration. That saves memory but introduces another load on the next message. The observed first load was 9.05 seconds.
+
+## MTP opportunity and limits
+
+A separate installed-v0.2.24 comparison, with one warmed 33 GB engine and fixed expert pool, measured median plain 13.50 tok/s versus speculative 17.45 tok/s over three rotating pairs. Each arm repeated its own output, but plain and speculative text differed from token 18. The observed ratio is about 1.29. Global paging occurred during the experiment, so this is **not a qualified general speedup or an app improvement already delivered**. It shows that enabling and qualifying the app's automatic MTP path is worth testing. This loop-only comparison retains draft-head memory in both arms and does not reproduce the app's independent MTP-off allocation.
+
+The next implementation work should rebuild and verify the app against current engine inputs, qualify automatic MTP in its ordinary and phased-thinking paths, and measure a short-conversation checkpoint/pass policy without weakening numerical provenance. Improve readiness based on cold/warm latency and memory measurements. Do not silently trade cache correctness for a smaller first-token number or infer a universal optimum from these four requests. No app code or saved performance preference changed in this investigation, and the app was reopened after the diagnostic.
+
+### Sevra desktop defaults: MTP, useful checkpoints and verified reloads
+The development app now uses the engine's qualified automatic MTP policy, a short-chat checkpoint schedule, foreground-aware readiness and session-scoped model verification. This addresses the integration gaps in [[records/measurements/sevra-app-speed-2026-09-23]]. Code and failed trials are preserved in [[sources/runs/2026/09/2026-09-23-sevra-app-optimizations]]. The policy and revision criteria are in [[records/decisions/sevra-app-speed-defaults-2026-09-23]].
+
+## Final matched-input comparison
+
+Three alternating pairs on the M5 Pro/48 GiB Mac using the pinned Qwen3.8-Flash-Next 4-bit model, MLX 0.32.2, and the 0.2.24 engine plus this development patch: 26 GB total budgets, 32,768 context, fixed 96-token replies and identical input histories:
+
+| Turn | Plain writing tok/s | New policy writing tok/s | Plain reading | New policy reading | New policy reused tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 11.51 | 16.03 | 3.88 s | 3.91 s | 0 |
+| 2 | 11.90 | 14.59 | 4.32 s | 5.94 s | 0 |
+| 3 | 11.67 | 19.03 | 4.67 s | 3.40 s | 512 |
+
+The median sum of prompt-reading and generation time across the three turns fell from **37.80 to 30.76 seconds**, an observed **18.6% reduction**. This includes the second turn's checkpoint-creation cost. It excludes model construction, UI overhead and the extra cold parity replay. Each within-policy cached result reproduced the cold output IDs exactly. MTP/plain text can differ, so this is matched token work and inputs, not a claim of identical answers across decoding methods.
+
+These are live-machine diagnostic timings: global swap-ins occurred and thermal state varied between nominal and fair. No new README throughput anchor or hardware estimate is justified. The earlier three-arm screen found automatic MTP already supplied most of the generation gain. Fixed smaller batches were slower for longer inputs; the hybrid keeps larger passes there. The 9,295-token inventory took roughly 31 seconds to read across the screening arms, with correct answers. That screening omitted a small optional correction charge from planning; the final comparison includes it.
+
+## What changed and what it costs
+
+- MTP activates automatically only when its optional head is present and the fully charged plan qualifies. Both the head and configured lookahead correction fit inside the app's displayed total ceiling. The automatic Desktop ceiling stays 33 GB; custom ceilings remain adaptive. Smaller budgets retain ordinary decoding.
+- Below 1,536 prompt tokens, compute passes are at most 512 tokens or the smaller live plan. This makes an eligible checkpoint available earlier. Longer prompts keep the planned schedule. The larger workspace reservation remains available; it is not silently spent on more experts. Creating a checkpoint can slow an earlier turn, and crossing schedules requires a fresh read when arithmetic is incompatible. Selection happens under the generation lock after a governor resize and is stable across a thinking continuation.
+- Automatic readiness retains an already-loaded model while the app is foreground and has a visible non-minimized window. Background inactivity starts a fresh interval. Pressure, power saving and sleep retain their release behavior. This does not preload the model merely because the app opened.
+- The first load still hashes the pinned files. Within one inference owner's lifetime, an unchanged APFS file-identity/size/mtime/ctime signature can reuse that successful proof. Changed or replaced files, optional-file changes, a new process and other filesystems require fresh hashing. No proof or private inference state is persisted by this mechanism.
+- Immediate reloads wait only the remaining 1.05 seconds after model release before reading real availability. XNU's one-second shared statistics cache otherwise undercounted newly freed memory and disabled MTP in two reproduced reload checks. No synthetic availability credit or safety bypass is used. [Apple kernel source](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c) documents the caching window.
+
+## Correctness and integration
+
+All six real-model profiles passed: precise phase metrics with actual MTP drafts, MTP disk restore/private isolation/cancellation/tools/crossover, thinking with Answer now, complete cited Cedar document creation after exact synthetic-fixture review, 10-to-9 GB lifecycle behavior, and ordinary 10 GB disk reuse. The MTP reload restored 2,048 prompt tokens at the full 26 GB budget; its immediate load was 2.085 seconds. The small-budget warm disk hit read only 168 tokens. Session-proof tests reject same-size corruption even after restoring mtime, optional arrival/removal, file replacement, symlink retargeting and mutation during verification, and honor cancellation.
+
+Native UI/runtime regressions, the final policy check, release builds, source-manifest verification, static gates and 73 engine catalogue checks (31,907 assertions) passed. The broader pure-policy sweep accepted 85 plans and safely refused 215. Functional acceptance is independent of global paging. The source changes preserve the independent CLI defaults and do not add another public release tag.
+
+The later [[sources/runs/2026/09/2026-09-23-sevra-verification-exact-mtime]] check strengthens the corruption test: it preserves inode, size and the exact nanosecond modification timestamp while corrupting the contents. Rejection and all scoped lifecycle checks passed. This test-only follow-up leaves the measured production implementation unchanged.
+
+## Rebuilt app observation
+
+The final native replay is complete after unlock. The first replay also exposed an idle cache-growth memory overshoot, which was fixed and retested. Exact captures, failed observations, source changes and test results are preserved in [[sources/runs/2026/09/2026-09-23-sevra-native-replay-growth]]. Earlier source captures remain unchanged.
+
+The final rebuilt development app completed the same synthetic bicycle/rain/RAM/greeting sequence. Its native UI displayed the persisted metrics. Automatic resolved to 33.000 GB, with thinking off:
+
+| Request | Answer tokens | Writing tok/s | First token, excluding load | Read / reused tokens |
+| --- | ---: | ---: | ---: | ---: |
+| cold-bicycle | 225 | 16.19 | 4.86 s | 143 / 0 |
+| warm-rain | 266 | 16.54 | 4.78 s | 418 / 0 |
+| warm-caching | 243 | 16.31 | 7.98 s | 737 / 0 |
+| warm-short | 2 | Tiny reply | 4.13 s | 490 / 512 |
+
+
+Initial model preparation took 9.08 seconds. After Release memory now in the same process, preparation took 1.28 seconds; prompt processing still took 9.76 seconds to first token. This short conversation did not meet the existing disk-save minimum. The full final sampled interval, including idle and reload, peaked at 29.65 GB within the displayed 33 GB ceiling.
+
+The initial replay peaked at 38.49 GB between requests and failed process-memory acceptance. Warm growth now preserves slot indices while appending capacity piece by piece, removes the full occupied-row gather, and checks the temporary allocation against both physical footprint and real availability. When it cannot fit, the existing warm cache stays usable and growth retries later. Exact-byte, generated-output parity, live governor recovery and the full static gates passed; the engine catalogue now has 31,919 assertions. This is an engine correction shared by Desktop and the CLI, with no extra switch.
+
+These native rates are single live-host observations with different answer lengths and availability. They do not replace the matched-input comparison above or justify a new public throughput anchor. Raw paging and thermal observations remain in the capture.
+
+## Remaining costs
+
+First launch still pays pinned weight verification. Uncached or schedule-incompatible context still requires real prompt computation and expert reads. MTP adds head memory and speculative work, so smaller plans must keep the existing activation guard. Short-batch checkpoint creation has an up-front cost. No universal maximum, cross-hardware speedup, or free continuation after every short message has been established. Revisit these operating choices with repeated complete-workflow measurements and the same numerical, privacy, process-budget and lifecycle gates.
+
+## A shared prefix at a prompt's own resume boundary: the head is upgraded, and the gate that fails without it
+**Outcome: a disk head that already holds the ids of a shared prefix is upgraded with the flag instead of being answered as present, and a shared save that is skipped or fails now says why.** Until this change, whenever a prompt's own resume boundary fell on the same pass end as the shared prefix of its own system prompt, the head was written first as the conversation's checkpoint, without the flag, and the shared save that followed found those ids and treated the file as already correct. In the live session that exposed it — an installed v0.2.23 server with the disk tier on, one agent session of 172 log lines, 16:34 to 16:53 — **not one line contains `shared`**, and the directory ended with four states, every one `"shared": false`. The 24,576-token head that conversation wrote at 16:39:34 (`saved 24576 tokens (795.2 MB written)`) was removed 11 minutes later as a redundant ancestor (`saved 26624 tokens (144.1 MB written, 707.8 MB of rows reused) in 0.16 s, removed 1 older file`). The tier reused that one conversation well — eleven restores of 795.2 to 851.8 MB in 0.07 to 0.26 s — and shared nothing between conversations.
+
+**Why both writes land on the same position.** A conversation's checkpoint is written where the request may resume, its last prefill pass boundary. A shared prefix is saved at the last pass end at or before the prompt's system-message boundary, the save grid the 2026-09-16 record measured. Whenever the system message ends inside the same pass cell as that last resume boundary the two positions are the same one, and the checkpoint write comes first. The existing-head check compared the ids, the draft cache and the pass layout but not the flag, so the shared save answered `.present`; the head stayed classed as the conversation's own and the ancestor removal a later save performs took it.
+
+**The change, in two parts.** `PersistentPrefixSave` answers `.present` only when the head on disk already carries this save's shared flag (`existing.shared || !shared`); otherwise it writes, so the flag is in the file and survives a reopen. Rows are still referenced through `State.persistedLineage`, so the upgrade rewrites one head and no rows: the live directory's heads are 115,908,592 and 115,897,787 bytes, against 795.2 MB for that state's first write. The second part is visibility: a shared save that is skipped or fails reports `kept no shared N-token prefix: <why>` or `failed to write the shared N-token prefix: <why>` on the tier's event stream, which `serve` prints as `prefix cache disk: …`; a successful shared save keeps printing `saved shared N-token prefix (…)`, the line whose absence was the first symptom.
+
+**Evidence.** `persistent-prefix-round-trip` (T1, in the CI catalogue) now runs the sequence on synthetic states: a checkpoint written at the boundary without the flag; the shared save that must upgrade it and reference its rows rather than write them again; a reopened cache that must read the flag from the head; two later turns that must not remove it as an ancestor; its rows restoring exactly at every step; and a shared save below the write minimum reporting its reason. It passes **110 assertions**, and the catalogue passes **73 groups with 31,919 assertions and 0 failed**. With only the one-line condition reverted and everything else kept, **seven of the same 110 assertions fail**: `the shared save that follows upgrades the head: got present, want saved`, `rewriting the head references its rows instead of writing them again`, `the head is shared: got 0, want 1`, `two later turns keep it instead of removing it as an ancestor`, `its rows still restore exactly: got nil`, `a reopened directory reads the flag from the head, not from memory`, `and restores the upgraded head: got nil`. The field session's arithmetic — a 25,282-token prompt whose system and tools block ended 24,993 tokens in, inside the 24,576-to-25,600 pass cell, so its last resume boundary was 24,576 — is the diagnosis this gate encodes; the prompt itself was not preserved, so the gate, not the log, is the reproduction. Raw output and the log lines: [[sources/runs/2026/09/2026-09-23-shared-prefix-boundary-upgrade]].
+
+**Limits.** Functional acceptance on one machine shared with other sessions, and no timing is claimed. The real-weight `optimization-state-check --variant shared-prefix --tokens 2051` passes on the fixed build, but it runs with `alignedPrefixResume` off, so it has no checkpoint at the shared boundary and never reaches the collision: it is a no-regression check on the disk write path, not evidence of the repair. Its draft-head variant was killed by the system before printing one check (signal 9, memory pressure) and is not evidence either way. No live server has run the fixed build yet; what to look for is `prefix cache disk: saved shared N-token prefix` in the session log, `"shared": true` in `slotstream prefix-cache`, and the reuse a second conversation then gets. The 2026-09-16 shared-prefix record's numbers stand and it is not superseded: its shared prefixes were saved at boundaries that did not coincide with a checkpoint, which is the case it did not cover. The price of the upgrade is one extra head write on every colliding boundary, 115.9 MB here, once per boundary and only where the two positions coincide; the skipped or failed outcome is reported rather than counted, so a loss shows up in the log and not only in a request's statistics.
+
+## The fixed build in a live server: a colliding shared prefix is upgraded, reused and kept
+**Outcome: in a live server running the fixed build, a shared prefix whose boundary collides with a conversation's own checkpoint is upgraded with the flag, another conversation starts from it, a deeper state does not remove it, and it survives a restart on disk alone.** This closes, for one machine and one plan, the limit [[records/measurements/shared-prefix-boundary-upgrade-2026-09-23]] stated — *No live server has run the fixed build yet* — and produces the three observables it named: `saved shared N-token prefix` in the log, `"shared": true` in `slotstream prefix-cache`, and the reuse a second conversation then gets.
+
+**The collision through the engine's own save path.** A 3,639-token request whose system block and whose own last resume boundary fall in the same 256-token cell writes its checkpoint at 3,584 without the flag and then the shared save at the same 3,584 boundary, which upgrades the head instead of answering it present:
+
+```
+[20:06:19] prefix cache disk: saved 3584 tokens (214.8 MB written) in 0.11 s
+[20:06:19] prefix cache disk: saved shared 3584-token prefix (115.7 MB written, 99.1 MB of rows reused) in 0.03 s
+```
+
+The rows come through `State.persistedLineage`, so the upgrade writes 115.7 MB against the checkpoint's 214.8 MB and no rows are rewritten. The listing then reports `{'tokens': 3584, 'shared': True}`. The field session that exposed the bug logged no line containing `shared` in 172 lines and ended with four states all `"shared": false`.
+
+**A second conversation starts from it.** A different conversation with the same system block reuses the head, `prefix cache: reusing 3584/3643 tokens from memory`. That is the payoff the 2026-09-23 record could only predict: the head is no longer classed as the first conversation's own, so another conversation is allowed to start from it.
+
+**A deeper save keeps it.** Extending the first conversation to 4,850 prompt tokens writes a 4,608-token state, and the save line carries no `removed` clause — where the field session's equivalent save said `removed 1 older file` and took the 24,576-token head. The directory afterwards holds both: `4608 (shared false, continued)` and `3584 (shared prefix, continued)`.
+
+**It restores across processes.** With the server stopped and restarted on the same directory, a fresh process reads the shared head from disk alone: `restored 3584 tokens (214.7 MB) in 0.04 s`, then `prefix cache: reusing 3584/3643 tokens from disk`.
+
+**Evidence.** The regression gate on the same binaries passes 110 assertions, and the full T0+T1 catalogue passes 73 groups with 31,931 assertions and 0 failed. The live transcript, the plan the server printed, the state listings and the build identity are in [[sources/runs/2026/09/2026-09-24-shared-prefix-live-acceptance]].
+
+**Limits.** Functional acceptance on one 32 GB MacBook Air shared with other sessions, one plan (`--memory-gb 10`, `--max-context 8192`, a 256-token prefill pass) and one prompt shape. The collision was constructed rather than met in the field: the system block and the prompt's last resume boundary were made to fall in the same 256-token cell, and the log confirms both writes at 3,584; the field workload — a 24,576-to-26,624-token agent session — is not re-run here. Elapsed times are incidental observations on a machine in ordinary use and are not a timing claim. The 2026-09-23 record's numbers stand and it is not superseded. The observed behaviour is one machine and one plan; the cross-conversation payoff in a real agent workload remains unobserved.
+
+## Prefix-cache floor at 2048 and 1024 tokens across a restart (community, 2026-09-16)
+Reported by `@jasen215` in [issue #17](https://github.com/carloslfu/slotstream/issues/17),
+preserved in [[sources/community/2026/09/2026-09-16-prefix-cache-min-tokens-jasen215]].
+
+Slotstream 0.2.18 (`main` at `ad89ecc`) on a 32 GiB Apple Silicon Mac,
+`serve --memory-gb 10 --max-context 65536`, one model process at a time. The
+prompt was a system prompt of about 1,900 tokens and one question. After the
+first turn the server stopped and a new one started over a copy of the state
+directory, so any reuse came from disk. The numbers are the server's own
+statistics.
+
+| Phase | Floor 2048 (the default) | Floor 1024 |
+|---|---|---|
+| Write after turn 1, 1,919-token prompt | nothing written | 170 MB |
+| Restart, 1,991-token prompt: tokens reused | **0** | **1,966** |
+| Restart: prefill | **45.5 s** | **6.0 s** |
+| Control: restart above both floors, 2,685-token prompt | 2,662 reused, 6.6 s | 2,662 reused, 6.5 s |
+| Disk after the last phase | 307 MB | 479 MB |
+
+The controls agree, so the difference comes from the floor alone. The write
+the floor avoids is small next to that re-read: on the 48 GB development Mac
+at 10 GB, later turns wrote about 117 MB each, a new head and their new rows,
+in 0.05 s, and a 225 MB state restored in 0.04 s
+([[records/measurements/persistent-prefix-cache-2026-09-14]]). Pi's opening
+prompt, about 1,600 tokens ([[records/design/measured-operating-policies]]),
+is also below 2048, so the servers `slotstream launch` starts kept it in memory
+but never wrote it to disk.
+
+On this evidence the default fell to 1024 tokens on 2026-09-24. The cost is one
+head plus the new rows on each turn of a conversation between 1,024 and 2,048
+tokens, within the same disk quota. Nothing below 1,024 was measured.
+
+**Rewinding after a restart.** A separate probe in the same report branched a
+three-turn conversation back to turn 1 after a restart and reused 0 tokens at
+either floor. The disk tier keeps a conversation's latest state and its parent,
+so the last reply can be regenerated, and removes older ones by design. Since
+0.2.21 a prompt's system message and the longest head it shares with a kept
+state are also saved as shared prefixes when they reach the floor, so such a
+branch reuses its system prompt, and a later branch from the same point
+resumes from the head the first one saved. That behavior was not measured
+again here.
+
+One run per configuration on one machine, with single timings, as the report
+states.
+
+## Decode speed: GPU keepalive, direct demand reads, a streamed draft head and plain-decode lookahead
+**Outcome: four decode changes won on the development Mac with unchanged output, and the other ideas tried did not.** A GPU keepalive and direct demand reads together made decode 1.28x faster at a 10 GB target without the draft head and 1.22x at 22 GB with the head and lookahead, over the pairs with no swap activity. Streaming the draft head's routed experts through a 64-expert cache freed 1.2 GB for the main cache, which made the head worth running at 12 GB: 1.23x over plain decode with the lookahead at 28.4 experts per layer, over three swap-free pairs (1.21x over all eight). Letting the decode lookahead run in plain decode added 1.11x at 10 GB. Together, at a 16 GB target, the four decoded 1.79x faster than the shipped default of that commit. The keepalive raised energy per generated token by 7%. The measured configurations were environment-guarded prototypes on an export of commit 37fcb8e; the landed implementations have their own confirmation below.
+
+**Method.** One model process at a time on the 48 GB M5 Pro, a live desktop and 4.6 to 6.7 GB of swap in use. Every arm ran every prompt each round in rotated order, after a wait for reclaimable memory above the target plus 6 GB. Four public corpus prompts (r0005, r0206, r0096, r0074, `Tools/expert_lookahead_corpus.py`), greedy, 192 output tokens, two rounds: 8 pairs per comparison. The primary screen keeps completed runs with no global swap-out and no thermal warning; every run had none of the latter. The strict screen also requires no global swap-in, which removes most pairs on this machine; a timing claim needs three strict pairs. Ratios are geometric means of paired decode tok/s. Arms: `kadd` is keepalive plus direct reads, `la` the qualified lookahead configuration (`la_env.json`, the 22 GB plan's), `hs` the head's experts streamed through 64 slots.
+
+**Why decode waits.** Streamed decode is stop-and-go. At each layer the host reads the routing back and reads the experts the cache lacks before it submits the next burst. With MLX timing instrumentation, a one-token pass with every expert resident was 337 command buffers with the GPU busy 58% of 55.2 ms, 68.3 µs idle per buffer. An idle Apple GPU clocks down and starts the next buffer late. A one-thread kernel spinning on its own command queue kept it busy: 65% of 47.4 ms, 49.5 µs idle per buffer (single instrumented runs, `gpu_windows.py`). Five paired rounds of the fetch-free pass cost, whose runs recorded swap-outs only, put the one-token pass at 55.8 against 48.5 ms (medians). A Metal microbenchmark re-run on a quiet GPU shows why: a small kernel that runs in 49 µs back to back took 230 µs after any idle gap of 200 µs or more, and the next buffer started 0.12 ms after commit after a 200 µs gap and 0.62 ms after a 5 ms gap; with the spin kernel resident on a second queue, 52 µs and 0.07 ms. Demand misses were read into staging arrays and scattered on the GPU, one more dispatch and synchronization per layer; the direct path reads into host scratch and copies each record into its slot.
+
+**Decode, paired ratios.** All pairs, then pairs with no swap activity (n):
+
+| comparison | target | all pairs | swap-free |
+|---|---|---|---|
+| keepalive + direct reads vs base, no head | 10 GB | 1.298, 1.257 in a rerun | 1.274 (5), 1.279 (6) |
+| direct reads alone | 10 GB | 1.141 | 1.164 (4) |
+| keepalive alone | 10 GB | 1.069 | 1.067 (4) |
+| keepalive + direct, head and lookahead | 22 GB | 1.191 | 1.215 (5) |
+| keepalive alone, head and lookahead | 22 GB | 1.127 | 1.110 (5) |
+| direct reads over keepalive | 22 GB | 1.057 | 1.051 (6) |
+| plain lookahead over keepalive + direct | 10 GB | 1.123 | 1.112 (4) |
+| plain lookahead over keepalive + direct | 16 GB | 1.071 | 1.054 (4) |
+| streamed head + la over plain la, all kadd | 12 GB | 1.207 | 1.230 (3) |
+| streamed head + la over plain la, all kadd | 10 GB | 0.988 | 1.051 (3) |
+| resident head over plain la, all kadd | 12 GB | 1.010 | 1.018 (2) |
+| resident head + la over plain la, all kadd | 16 GB | 1.323 | 1.323 (5) |
+| streamed over resident head, kadd | 22 GB | 1.008 | 0.990 (4) |
+| streamed over resident head, kadd | 12 GB | 1.136 | 1.134 (2) |
+| streamed over resident head, kadd | 10 GB | 1.005 | 1.005 (3) |
+| streamed head + la + kadd vs shipped | 16 GB | 1.785 | 1.794 (4) |
+| streamed head + kadd vs shipped | 22 GB | 1.166 | 1.178 (3) |
+
+Every same-mode comparison kept identical output ids. Streamed and resident heads differed on 2 of 8 at 12 GB because the streamed plan's larger budget chose a longer prefill pass, which moves prompt logits within the known re-chunking envelope; with the pass pinned, the streamed head's ids equal the resident head's. Head against plain comparisons differ at near ties, as speculative and plain decode always have. The draft head's cache hit rate was 0.47 at depth 2, and its reads took 0.24 to 0.34 s per 192-token request.
+
+**Caches measured, experts per layer.** 10 GB: 20.0 plain, 17.1 with the lookahead, 17.4 with the streamed head, 13.3 with the resident head (the floor pool). 12 GB: 31.1, 28.2, 28.4, 22.7. 16 GB: 53.7 plain, 47.6 with the streamed head and lookahead, 39.4 with the resident head and lookahead. 22 GB: 73.6 with the resident head and lookahead, 82.7 streamed. Peak memory with the streamed head stayed at or below the resident head's at every target.
+
+**Energy.** IOReport SoC energy over the whole request at 16 GB, streamed head and lookahead on both arms: the keepalive raised energy per generated token 7.1% over four swap-free pairs (6.7% over eight), average power 26.7 to 32.5 W, for 1.17x decode (1.19x over eight). Against the shipped default the full configuration used 11.0% less energy per token (12.7% over eight), because it finished sooner.
+
+**Did not help.** A duty-cycled keepalive with 200 µs or 1 ms gaps (1.033 and 1.019, wide spread: the clock falls in the gaps). MLX's host spin-wait instead of blocking waits (0.711). Committing every 10 operations, with or without a buffer size limit (0.968, 0.995). A compiled one-row GDN step (0.978). User-interactive QoS for the generating thread (1.007). Layer-local eviction at the floor pool (0.906 plain). Overlapping the shared expert (0.986 at 16 GB, 0.967 at 22 GB). Draft depth 1 (0.979 at 12 GB) and 3 (0.701), and an adaptive depth up to 3 (0.801). The plain lookahead in place of the head at 22 GB (0.744).
+
+**Landed code.** The keepalive (`--gpu-keepalive`, `auto` on AC power) and direct demand reads (`SLOTSTREAM_OPT_DIRECT_DEMAND`) were confirmed on the landed build under heavier paging: every run saw swap-ins, so no pair is swap-free and these confirm direction, not a timing claim. Same binary, both switches on against both off, 8 pairs each: 1.228 at 10 GB (8 of 8 above 1, 1.111 to 1.307) and 1.116 at 22 GB (8 of 8 above 1, 1.006 to 1.223), identical ids. Against the installed 0.2.24 release: 1.150 at 10 GB (6 pairs without swap-outs) and 1.092 at 22 GB (8 pairs), identical ids and draft acceptance; the release differs by other commits and its build too. `decode-overlap-check` passed 1,672 assertions on the pre-release build.
+
+**Landed streamed head and plain-decode lookahead.** The streamed head, its floor of 28 and the plain lookahead were confirmed on their own landed build ([[sources/runs/2026/09/2026-09-24-draft-stream-landed]]), again with swap-ins in every pair, so these confirm direction, not a timing claim. At 12 GB, automatic mode, the streamed head with the lookahead at 25.5 experts per layer, against `--mtp off`, plain decode with the lookahead at 28.2: 1.205 over eight pairs, eight of eight above 1 (1.093 to 1.329). Plain decode with the lookahead against without it: 1.045 at 10 GB over seven pairs without swap-outs (six above 1, 0.965 to 1.136) and 1.050 at 22 GB with `--mtp off`, 75 against 78 experts per layer at a 65,536-token automatic window, over eight (seven above 1). Because the 10 GB ratio fell short of the prototype's, a later session interleaved the landed build and the prototype, each with and without its lookahead, at 10 GB: 1.082 landed and 1.064 prototype, eight of eight above 1 each, and the two builds within 1.3% of each other with the lookahead and 0.4% without, so the shortfall came from the machine's state that hour. Plain-decode and lookahead pairs kept identical ids; head against plain pairs differ at near ties as always. `draft-stream-check` passed 23 assertions, and `decode-overlap-check` passed again on the combined build.
+
+**Limits.** One Mac, one SSD and four prompts of 192 tokens; larger caches than 22 GB were not timed. Most comparisons keep fewer than three swap-free pairs; the claims use only those that keep three or more. The fetch-free pass-cost rounds recorded swap-outs but not swap-ins. The GPU span figures are single instrumented runs.
+
+### v0.2.25 published, installed and accepted
+**v0.2.25 is public, installed and accepted.** It ships the GPU keepalive and direct demand reads, the draft head streaming its experts with an automatic floor of 28 experts per layer, and the decode lookahead in plain decode. It also carries the shared-prefix boundary fix from [#27](https://github.com/carloslfu/slotstream/pull/27), the decode-forecast download from [#28](https://github.com/carloslfu/slotstream/pull/28) and the documented Mac app changes.
+
+Release: [v0.2.25](https://github.com/carloslfu/slotstream/releases/tag/v0.2.25), published 2026-09-24T22:49:34Z from `a0cca848722bf27e7b896a948bff560936a14dbb`. The CI candidate, public archive and installed executable match exactly. Archive SHA-256: `24774d0755b16840f43b51e2a782ff0f68564ec5f9d75a8e4e17258515b3fb13`. Executable SHA-256: `d960143c783dda94bd4d43d304e5f9f7c0e195f7d00feacc2934885dd3d3a951`.
+
+| Acceptance | Result |
+| --- | --- |
+| Exact-commit hosted CI | Engine, instrumented coverage, external library consumer, Mac app and context contracts passed |
+| Engine catalogue | 75 groups, 32,004 assertions, no failures or skips, in release and instrumented builds |
+| Full native battery | 35 top-level gates passed, including both elastic governor drills, `draft-stream-check`, `decode-overlap-check`, quality 15/15, robustness 74/74 and vision serving 25/25 |
+| Public distribution | Preserved CI archive published, public checksum/provenance verified, public installer upgraded the standard installation from 0.2.24 |
+| Installed serving | 31/31 with a 10 GB target and MTP on, the draft head streaming its experts; owned server reaped |
+
+The first candidate, `5a54b68`, passed CI but failed both elastic drills and was not tagged. The drill predicted the governor without the decode lookahead's reserve, which plain decode now charges; the governor was right. The fix, `a0cca84`, changes only the drill, and both drills then passed on the released bytes. [[sources/runs/2026/09/2026-09-24-release-0-2-25-published-and-installed]] retains the commands, both candidates' native logs, the fix confirmation, source/build identity, workflow output, installer and process-cleanup receipts. The historical backend reference remains visible beside the passing current-backend reference; no tolerance was widened.
+
+These are functional acceptance results, not speed claims. The decode gains this release ships, and their limits, are in [[records/measurements/decode-perf-2026-09-24]].

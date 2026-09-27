@@ -114,6 +114,18 @@ public struct GenStats: Codable {
     public var decodeSlotWordBuffers = 0
     public var prefillSlotCPUBatches = 0
     public var decodeSlotCPUBatches = 0
+    /// Demand batches read straight into their slots; nil in statistics
+    /// written before the direct path existed.
+    public var prefillSlotDirectBatches: Int?
+    public var decodeSlotDirectBatches: Int?
+    /// Whether this request kept the GPU awake (`GPUKeepAlive`); nil in
+    /// statistics written before it existed.
+    public var gpuKeptAwake: Bool?
+    /// A streamed draft head's expert cache during decode; nil when the head
+    /// keeps its experts resident or is off.
+    public var draftExpertHits: Int?
+    public var draftExpertMisses: Int?
+    public var draftExpertReadSeconds: Double?
     public var prefixCheckpointForks = 0
     public var prefixCheckpointStores = 0
     public var prefixCheckpointRefusals = 0
@@ -1199,6 +1211,7 @@ public final class Generator {
         stats.prefillSlotSliceBatches = model.pool.slotSliceBatches
         stats.prefillSlotWordBatches = model.pool.slotWordBatches
         stats.prefillSlotCPUBatches = model.pool.slotCPUBatches
+        stats.prefillSlotDirectBatches = model.pool.slotDirectBatches
         stats.prefillMLXActiveBytes = MLX.Memory.activeMemory
         stats.prefillMLXCacheBytes = MLX.Memory.cacheMemory
         stats.prefillPhysicalFootprintBytes = ProcessMemory.residentBytes()
@@ -1243,6 +1256,8 @@ public final class Generator {
             callbackSeconds += RuntimeClock.seconds(since: start)
             return result
         }
+        let draftStream = mtpHead?.expertStream
+        let draftStreamStart = draftStream.map { ($0.hits, $0.misses, $0.readSeconds) }
         do {
         if let head = mtpHead, speculationEnabled, let mtpState = state.mtp {
             try speculativeDecode(
@@ -1322,6 +1337,12 @@ public final class Generator {
         stats.decodeSlotWordBatches = model.pool.slotWordBatches
         stats.decodeSlotWordBuffers = model.pool.slotWordBuffers
         stats.decodeSlotCPUBatches = model.pool.slotCPUBatches
+        stats.decodeSlotDirectBatches = model.pool.slotDirectBatches
+        if let draftStream, let start = draftStreamStart {
+            stats.draftExpertHits = draftStream.hits - start.0
+            stats.draftExpertMisses = draftStream.misses - start.1
+            stats.draftExpertReadSeconds = draftStream.readSeconds - start.2
+        }
         stats.decodeReadBytes = model.pool.recordsFetched * model.pool.recordBytes
         stats.ngramRowHits = model.ngram.rowHits
         stats.ngramRowMisses = model.ngram.rowMisses
@@ -1478,7 +1499,7 @@ extension Generator {
                 if shouldContinue?() == false { draftCancelled = true; break }
                 try checkAllocation(state.tokenCount, mtpState.offset + 1, 1_300_000, "draft cache growth")
                 let e = try model.resident.embedChecked([dTok], shape: [1, 1]).asType(.bfloat16)
-                let (s, m) = head(embedded: e, hiddenMulti: dMulti, rope: model.rope, state: mtpState)
+                let (s, m) = try head.callAsFunctionChecked(embedded: e, hiddenMulti: dMulti, rope: model.rope, state: mtpState)
                 let dl = model.lmHead(s)
                 dTok = argMax(dl.reshaped([-1]).asType(.float32)).item(Int.self)
                 drafts.append(dTok)

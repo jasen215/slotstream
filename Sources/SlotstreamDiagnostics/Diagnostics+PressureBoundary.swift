@@ -75,7 +75,8 @@ extension Diagnostics {
             ramGB: base.ramGB, workingSetGB: base.workingSetGB, ramPercent: base.ramPercent,
             availableGB: 0, clamped: true, prefillChunk: 256, prefixCacheTokens: 1024,
             mtpEnabled: base.mtpEnabled, visionEnabled: false,
-            maxContextTokens: base.maxContextTokens, notes: ["bounded pressure diagnostic; shrink only"]))
+            maxContextTokens: base.maxContextTokens, notes: ["bounded pressure diagnostic; shrink only"],
+            memoryLimitGB: nil, mtpStreamedExperts: base.mtpStreamedExperts))
         let saved = Planner.availabilityOverride
         defer { Planner.availabilityOverride = saved }
         Planner.availabilityOverride = 0
@@ -186,7 +187,7 @@ extension Diagnostics {
                 throw ModelError("governor recovery requires a real memory reading")
             }
             let recovery = stride(from: 0.0, through: min(10, available), by: 0.125).first { value in
-                let inputs = GovernorPolicy.Inputs(currentSlots: engine.poolSnapshot().slots,
+                var inputs = GovernorPolicy.Inputs(currentSlots: engine.poolSnapshot().slots,
                     availableGB: value, ramGB: current.ramGB, workingSetGB: current.workingSetGB,
                     ramPercent: current.ramPercent, secondsSincePressure: 0,
                     mtpEnabled: current.mtpEnabled, visionEnabled: current.visionEnabled,
@@ -194,6 +195,7 @@ extension Diagnostics {
                     maxContextTokens: current.maxContextTokens,
                     runtimeAllocationPolicy: current.runtimeAllocationPolicy,
                     contextQualification: current.contextQualification)
+                inputs.mtpStreamedExperts = current.mtpStreamedExperts
                 return GovernorPolicy.desiredPlan(inputs) != nil && GovernorPolicy.decide(inputs) == .hold
             }
             guard let recovery else { throw ModelError("no bounded feasible governor recovery is available") }

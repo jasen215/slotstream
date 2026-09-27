@@ -77,7 +77,8 @@ that use.
 
 What the native stack does not claim: the measured gains on this page come
 from the mechanisms named with them, the decode lookahead, the corrected
-expert forecast, speculative decoding and the prefix cache. Warm decode is
+expert forecast, speculative decoding, the prefix cache, the GPU keepalive and
+direct demand reads. Warm decode is
 dominated by SSD reads and GPU waits, so the work goes to fewer reads and
 more overlap rather than host-side micro-optimization
 ([decision](../db/records/decisions/decode-host-time-is-waiting-not-graph-construction.md)).
@@ -137,15 +138,24 @@ At a 28 GB memory target, that one-draft configuration improved greedy decode
 by ×1.24 (10.3 → 12.8 tok/s); the improvement was ×1.18 with default server
 sampling.
 
-`--mtp auto` enables this when the expert cache can still hold 76 experts per
-layer after allocating 1.6 GB for the head, before the separate lookahead
-reservation, a 21 GB target at the 32,768-token window. Availability and
-context can change activation. The floor was 120 until 0.2.16; on 0.2.14, two drafts decoded 31.7%
-faster than plain decode on the same memory at 76 per layer. The automatic
-ceiling is 34.6 GB with the head enabled at the 32,768-token window; larger
-windows add their context charges. `--mtp off` disables the head.
+`--mtp auto` enables this when the expert cache can still hold 28 experts per
+layer after the head's charge, before the separate lookahead reservation, a
+12 GB target at the 32,768-token window. Availability and context can change
+activation. The head's 512 experts are 1.42 GB of its 1.47 GB. On a cache of
+76 experts per layer or more after the full 1.6 GB charge they stay resident.
+Below that the head reads them from the SSD through a 64-expert cache of its
+own, a 0.4 GB charge, and the main cache keeps the other 1.2 GB. A draft row
+routes to ten experts; about half are already in that cache. At a 12 GB
+target this made the head 1.23x faster than plain decode with the lookahead,
+where a resident head only tied, and the head now runs on 24 GB Macs. The
+floor was 120 until 0.2.16 and 76 until now; on 0.2.14, two drafts decoded
+31.7% faster than plain decode on the same memory at 76 per layer. The
+automatic ceiling is 34.6 GB with the head enabled at the 32,768-token window;
+larger windows add their context charges. `--mtp off` disables the head.
 
-With the head on, 0.2.16 also runs the decode lookahead. After each layer, the
+With the head on, 0.2.16 also runs the decode lookahead, and without the head
+it now runs in plain decode too, where it made plain decode 1.11x faster at a
+10 GB target. After each layer, the
 router of the layer two ahead runs on the current hidden state, and the experts
 it picks are read from the SSD straight into cache slots before that layer asks
 for them. FP32 copies of the router weights save a conversion on every routing
@@ -161,6 +171,31 @@ records its 373 MiB charge, overrides and limits.
 The short [expert lookahead guide](EXPERT-LOOKAHEAD.md) explains the mechanism
 and the experiments that led to it.
 
+### GPU keepalive and direct demand reads
+
+Streamed decode is stop-and-go. At every layer the host reads the routing
+back, reads the experts the cache is missing and only then submits the next
+burst of GPU work, so a one-token pass is a few hundred short command buffers
+with the GPU idle in between. An idle Apple GPU lowers its clock and starts
+the next buffer late. While a request generates, Slotstream now keeps the GPU
+busy with a one-thread kernel on its own command queue. The kernel computes
+nothing and touches no model memory, so outputs are unchanged.
+
+Cache misses used to be read into staging arrays and then scattered into the
+cache on the GPU, one more dispatch and wait per layer. They are now read into
+host memory and copied straight into their cache slots: the same bytes in the
+same place, without the scatter.
+
+On the development Mac, paired and interleaved with identical output, the two
+together made decode 1.28x faster at a 10 GB target without the draft head
+and 1.22x faster at 22 GB with the draft head and lookahead, counting only
+pairs with no swap activity. The keepalive costs power: energy per generated
+token rose 7% at 16 GB, so `--gpu-keepalive auto`, the default, runs it only
+on AC power outside Low Power Mode. `--gpu-keepalive off` and
+`SLOTSTREAM_OPT_DIRECT_DEMAND=0` restore the previous behavior. The
+[measurement](../db/records/measurements/decode-perf-2026-09-24.md) has every
+comparison, both screens and the ideas that did not help.
+
 [MEASUREMENTS.md](../MEASUREMENTS.md) includes the configurations, comparisons,
 and failed experiments behind these results.
 
@@ -168,7 +203,8 @@ and failed experiments behind these results.
 
 **Prompt, conversation history, images, and reply share one window, which auto
 picks for each Mac.** It takes the largest of 32,768, 65,536, 131,072 and
-262,144 tokens that keeps speculative decoding, retains one complete
+262,144 tokens that keeps speculative decoding as the 32,768-token plan has
+it, including a draft head's resident experts, retains one complete
 conversation and adds at most 10% to the planner's estimate for a typical
 request. A flat estimate beyond its measured cache range is not evidence that
 extra cache has no value: auto declines reductions in that range and reports
@@ -242,6 +278,12 @@ when space is available. The cache-size and resize gates check byte-identical
 greedy output with the other generation settings fixed. Changing the total
 memory target can also change prefill grouping or enable speculative decoding;
 those are separate changes, not part of that equality claim.
+
+Warm growth also needs room for temporary replacement tensors. The governor
+checks this extra allocation against both the process target and current
+system availability. If it cannot fit, the existing warm cache stays usable
+and growth waits. The copy preserves slot positions and appends capacity one
+tensor at a time, without gathering another copy of all occupied slots.
 
 To set a memory target yourself:
 

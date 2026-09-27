@@ -228,7 +228,14 @@ public struct GenerationObservation: Sendable, Equatable {
     public var rate: Double? { tokens >= 2 && seconds > 0 ? Double(tokens - 1) / seconds : nil }
 }
 public func digestText(_ s: String) -> String { digestBytes(Data(s.utf8)) }
-public func digestBytes(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }
+public func digestBytes(_ d: Data) -> String {
+    // Lowercase hex without String(format:), which dominated hashing many
+    // small records.
+    let digits = Array("0123456789abcdef".utf8)
+    var hex = [UInt8](); hex.reserveCapacity(64)
+    for byte in SHA256.hash(data: d) { hex.append(digits[Int(byte >> 4)]); hex.append(digits[Int(byte & 0x0f)]) }
+    return String(decoding: hex, as: UTF8.self)
+}
 func encoded<T: Encodable>(_ value: T) throws -> Data {
     let e = JSONEncoder(); e.outputFormatting = [.sortedKeys]; e.dateEncodingStrategy = .iso8601
     return try e.encode(value)

@@ -121,25 +121,40 @@ mkdir -p "$T/mtpdir" && : > "$T/mtpdir/mtp.safetensors"
 M="--model $T/mtpdir"
 run_binary doctor $M --max-context 32768 --sim-ram 137.4 > "$T/mtp128" 2>&1
 check "MTP auto on a big quiet machine: knee + head = 34.6" "grep -q 'target: 34.6' $T/mtp128 && grep -q 'mtp:    draft head on' $T/mtp128"
+check "a big cache keeps the head's experts resident" "grep -q 'speculative decode (1.6 GB resident' $T/mtp128"
 run_binary doctor $M --sim-ram 17.2 --sim-working-set 11.8 --sim-available 12.5 > "$T/mtp16" 2>&1
 check "MTP auto stays off on a 16GB machine"            "! grep -q 'draft head on' $T/mtp16 && grep -q 'target: 9.8' $T/mtp16"
 run_binary doctor $M --sim-ram 137.4 --memory-gb 30 > "$T/mtp30" 2>&1
 check "MTP auto on at --memory-gb 30 (137/layer after the charge)" "grep -q 'draft head on' $T/mtp30"
 run_binary doctor $M --sim-ram 137.4 --memory-gb 22 > "$T/mtp22" 2>&1
-check "MTP auto on at --memory-gb 22 (above the 76/layer floor after the charge)" "grep -q 'draft head on' $T/mtp22"
+check "MTP auto on at --memory-gb 22 (resident: 76/layer after the charge)" \
+      "grep -q 'draft head on' $T/mtp22 && grep -q '1.6 GB resident' $T/mtp22"
 check "decode lookahead rides the head at --memory-gb 22" "grep -q 'lookahead: on' $T/mtp22"
 run_binary doctor $M --sim-ram 32 > "$T/mtp32mac" 2>&1
 check "32 GB Mac: auto runs the head and the lookahead" "grep -q 'draft head on' $T/mtp32mac && grep -q 'lookahead: on' $T/mtp32mac"
 run_binary doctor $M --sim-ram 24 > "$T/mtp24mac" 2>&1
-check "24 GB Mac: auto runs neither" "! grep -q 'draft head on' $T/mtp24mac && ! grep -q 'lookahead: on' $T/mtp24mac"
+check "24 GB Mac: auto streams the head's experts and runs the lookahead" \
+      "grep -q 'draft head on' $T/mtp24mac && grep -q 'stream through' $T/mtp24mac && grep -q 'lookahead: on' $T/mtp24mac"
 run_binary doctor $M --sim-ram 32 --max-context 65536 > "$T/mtp32ctx" 2>&1
-check "32 GB Mac at 65,536 tokens runs without the head" "! grep -q 'draft head on' $T/mtp32ctx"
+check "32 GB Mac at 65,536 tokens keeps the head by streaming its experts" \
+      "grep -q 'draft head on' $T/mtp32ctx && grep -q 'stream through' $T/mtp32ctx"
 run_binary doctor $M --sim-ram 36 --max-context 65536 > "$T/mtp36ctx" 2>&1
 check "36 GB Mac at 65,536 tokens keeps the head and the lookahead" \
       "grep -q 'draft head on' $T/mtp36ctx && grep -q 'lookahead: on' $T/mtp36ctx"
 run_binary doctor $M --sim-ram 137.4 --memory-gb 16 > "$T/mtp16t" 2>&1
-check "MTP auto off at --memory-gb 16 (below the 76/layer floor)" \
-      "! grep -q 'draft head on' $T/mtp16t && ! grep -q 'lookahead: on' $T/mtp16t"
+check "--memory-gb 16: below 76/layer the head streams its experts, with the lookahead" \
+      "grep -q 'draft head on' $T/mtp16t && grep -q 'stream through' $T/mtp16t && grep -q 'lookahead: on, expert prefetch with the draft head' $T/mtp16t"
+check "streamed head charge visible in json" \
+      "run_binary doctor $M --sim-ram 137.4 --memory-gb 16 --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d[\"mtp\"] and d[\"mtp_streamed_experts\"] and d[\"memory_ledger\"][\"mtp_resident_bytes\"] == 389017600, d'"
+run_binary doctor $M --sim-ram 137.4 --memory-gb 12 > "$T/mtp12t" 2>&1
+check "--memory-gb 12: the streamed head reaches its 28/layer floor" "grep -q 'draft head on' $T/mtp12t && grep -q 'stream through' $T/mtp12t"
+run_binary doctor $M --sim-ram 137.4 --memory-gb 11 > "$T/mtp11t" 2>&1
+check "--memory-gb 11: below the head's floor, plain decode with the lookahead" \
+      "! grep -q 'draft head on' $T/mtp11t && grep -q 'lookahead: on, expert prefetch in plain decode' $T/mtp11t"
+SLOTSTREAM_MTP_EXPERTS=resident "$BIN" doctor $M --sim-ram 137.4 --memory-gb 16 > "$T/mtp16res" 2>&1
+check "SLOTSTREAM_MTP_EXPERTS=resident keeps the resident head's floor" \
+      "! grep -q 'draft head on' $T/mtp16res && grep -q 'lookahead: on, expert prefetch in plain decode' $T/mtp16res"
+check "SLOTSTREAM_MTP_EXPERTS gibberish refused" "! SLOTSTREAM_MTP_EXPERTS=partial run_binary doctor $M --memory-gb 16"
 SLOTSTREAM_OPT_EXPERT_PREFETCH=0 "$BIN" doctor $M --sim-ram 137.4 --memory-gb 22 > "$T/mtp22off" 2>&1
 check "SLOTSTREAM_OPT_EXPERT_PREFETCH=0 keeps the head without the lookahead" \
       "grep -q 'draft head on' $T/mtp22off && ! grep -q 'lookahead:' $T/mtp22off"
@@ -150,10 +165,11 @@ check "--mtp on forces the head onto a small machine"   "grep -q 'draft head on'
 check "a head forced below the floor runs without the lookahead" "! grep -q 'lookahead: on' $T/mtpforce"
 run_binary doctor $M --mtp off --max-context 32768 --sim-ram 137.4 > "$T/mtpoff" 2>&1
 check "--mtp off suppresses it everywhere"              "! grep -q 'draft head on' $T/mtpoff && grep -q 'target: 33.0' $T/mtpoff"
+check "--mtp off runs the lookahead in plain decode"     "grep -q 'lookahead: on, expert prefetch in plain decode' $T/mtpoff"
 check "--mtp on without mtp.safetensors is a clean error" \
       "run_binary doctor --model $T/nosafe --mtp on 2>&1 | grep -q 'mtp.safetensors is not next to the model'"
-check "--mtp on cannot squeeze under the minimum target" \
-      "! run_binary doctor $M --mtp on --memory-gb 8.5 2>&1 | grep -q 'target: 8.5'"
+check "--mtp on cannot squeeze under the minimum target plus the streamed head" \
+      "! run_binary doctor $M --mtp on --memory-gb 8.4 2>&1 | grep -q 'target: 8.4'"
 check "--mtp gibberish refused"                         "! run_binary doctor --mtp sometimes"
 check "MTP charge visible in json peak" \
       "run_binary doctor $M --max-context 32768 --sim-ram 137.4 --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d[\"mtp\"] and abs(d[\"expected_peak_gb\"]-d[\"target_gb\"]+1.0)<0.35, d'"
@@ -220,7 +236,7 @@ auto_window_is() {
 }
 check "16 GB Mac: automatic window is 32,768"                  "auto_window_is 32768 --sim-ram 16"
 check "24 GB Mac: automatic window is 32,768"                  "auto_window_is 32768 --sim-ram 24"
-check "32 GB Mac: automatic window is 32,768 (65,536 drops the head)" "auto_window_is 32768 --sim-ram 32"
+check "32 GB Mac: automatic window is 32,768 (65,536 would stream the head)" "auto_window_is 32768 --sim-ram 32"
 check "36 GB Mac: automatic window is 65,536"                  "auto_window_is 65536 --sim-ram 36"
 check "48 GB Mac: auto preserves cache with unmeasured benefit" "auto_window_is 32768 --sim-ram 48"
 check "64 GB Mac: automatic window is 131,072"                 "auto_window_is 131072 --sim-ram 64"

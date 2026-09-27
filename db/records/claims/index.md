@@ -2,16 +2,39 @@
 type: index
 scope: type-folder
 folder: records/claims
-updated: 2026-09-23T04:16:53.870119Z
+updated: 2026-09-26T16:03:31Z
 ---
 
 # records/claims
 
+- [[records/claims/hardware-planning-range-medium]] — Estimated warm reply range for 24 to less than 48 GB Macs
+- [[records/claims/warm-decode-m4-pro-24gb-community]] — M4 Pro 24 GB community report: 3.57 tok/s
+- [[records/claims/persistent-prefix-default-minimum-tokens]] — The persistent prefix cache writes states of 1024 tokens or more by default
+- [[records/claims/full-context-wait-about-8-minutes-at-65536]] — M5 Pro-based prefill estimate is about 8 minutes near the larger window from a 32 GB simulation, about 9 at 24 GB
+- [[records/claims/mtp-auto-floor-28-per-layer-12-gb-target]] — Auto turns speculative decode on when the cache still reaches 28 experts per layer after the head, a 12 GB target
+- [[records/claims/mtp-auto-floor-76-per-layer-21-gb-target]] — Auto turns speculative decode on when the cache still reaches 76 experts per layer after the head, a 21 GB target
+- [[records/claims/tier-rows-are-estimates-from-the-48-gb-curve]] — Small-memory planner estimates use the M5 Pro curve; README has broader ranges
+- [[records/claims/auto-floor-76-experts-per-layer]] — The draft head keeps its experts resident from 76 experts per layer; below that they stream, and the automatic floor is 28
+- [[records/claims/streamed-draft-head-charge-0-4-gb]] — A draft head whose experts stream is charged 0.4 GB instead of 1.6 GB
+- [[records/claims/plain-decode-lookahead-floor-20-experts-per-layer]] — Without the draft head the decode lookahead runs from 20 experts per layer before its charge
+- [[records/claims/plain-decode-lookahead-1-05x-to-1-11x]] — The decode lookahead made plain decode 1.05x to 1.11x faster on the development Mac
+- [[records/claims/plain-decode-lookahead-1-11x-at-10-gb]] — The decode lookahead made plain decode 1.11x faster at a 10 GB target
+- [[records/claims/draft-head-auto-floor-28-experts-per-layer]] — The draft head's automatic floor is 28 experts per layer, a 12 GB target
+- [[records/claims/streamed-draft-head-1-23x-at-12-gb]] — The draft head with streamed experts decoded 1.23x faster than plain decode with the lookahead at a 12 GB target
+- [[records/claims/gpu-keepalive-energy-7-percent-at-16-gb]] — The GPU keepalive raised energy per generated token 7% at 16 GB
+- [[records/claims/keepalive-and-direct-reads-1-22x-at-22-gb]] — The GPU keepalive and direct demand reads made decode 1.22x faster at 22 GB with the draft head and lookahead
+- [[records/claims/keepalive-and-direct-reads-1-28x-at-10-gb]] — The GPU keepalive and direct demand reads made decode 1.28x faster at a 10 GB target without the draft head
+- [[records/claims/warm-decode-m3-max-64gb-community]] — M3 Max 64 GB community report: 12.38 tok/s
+- [[records/claims/hardware-planning-range-high]] — Estimated warm reply range for 48 to less than 96 GB Macs
+- [[records/claims/warm-decode-m4-max-36gb-community]] — M4 Max 36 GB community report: 8.41 tok/s
+- [[records/claims/warm-decode-m4-max-64gb-external-ssd-community]] — M4 Max 64 GB from a 10 Gb/s external SSD: 2.98 tok/s
+- [[records/claims/warm-decode-m4-max-64gb-community]] — M4 Max 64 GB community report: 15.93 tok/s
+- [[records/claims/warm-decode-m2-16gb-0-2-3-rerun-community]] — M2 mini 0.2.3 re-run: 1.48 tok/s
+- [[records/claims/two-tier-rows-are-measured-on-real-macs]] — Hardware reports cover the M5 Pro, M2 mini, M5 Max, and M5 Air; planner estimates remain separate.
+- [[records/claims/sevra-mac-folders-2000-files]] — Sevra reads folders of up to 2,000 files
 - [[records/claims/release-2k-prose-current-timing]] — Installed-release prose first-read range and ordinary exact-repeat latency at the measured small-budget profile.
 - [[records/claims/release-2k-code-current-timing]] — Installed-release code first-read range and ordinary exact-repeat latency at the measured small-budget profile.
 - [[records/claims/tier-estimate-10-tok-s-at-32-gb]] — A 32 GB Mac is estimated at about 10 tok/s with speculative decoding
-- [[records/claims/hardware-planning-range-high]] — Estimated warm reply range for 48 to less than 96 GB Macs
-- [[records/claims/hardware-planning-range-medium]] — Estimated warm reply range for 24 to less than 48 GB Macs
 - [[records/claims/warm-decode-0-2-19-at-22-gb]] — Warm decode is 15.86 tok/s with the 0.2.19 corrected forecast at a 22 GB target on the development Mac
 - [[records/claims/prose-prefix-reuse-public-timing]] — Exact prose prefix reuse reduces follow-up request time
 - [[records/claims/mtp-prefill-policy-public-timing]] — Qualified long MTP prefill policy reduces paired prefill time
@@ -46,7 +69,6 @@ updated: 2026-09-23T04:16:53.870119Z
 - [[records/claims/claude-code-instructions-about-15000-tokens]] — Claude Code's instructions and tool descriptions take about 15,000 tokens
 - [[records/claims/coding-agents-verified-versions]] — The coding agents guide names the agent versions that were verified
 - [[records/claims/claude-code-guide-verified-version]] — The Claude Code guide was verified with Claude Code 2.1.270
-- [[records/claims/sevra-mac-folders-2000-files]] — Sevra reads folders of up to 2,000 files
 - [[records/claims/sevra-mac-recognition-40-pages]] — Sevra recognizes text on at most 40 pages per request
 - [[records/claims/sevra-mac-documents-64-mb]] — Sevra reads rich documents up to 64 MB
 - [[records/claims/sevra-mac-text-files-8-mb]] — Sevra reads text and code files up to 8 MB each
@@ -68,12 +90,10 @@ updated: 2026-09-23T04:16:53.870119Z
 - [[records/claims/warm-decode-13-5-tok-s-with-the-decode-lookahead]] — Warm decode is 13.47 tok/s with decode lookahead at a 20 GB target on the development Mac
 - [[records/claims/warm-decode-12-tok-s-on-48-gb]] — Warm decode is about 12 tok/s on the 48 GB dev Mac
 - [[records/claims/warm-decode-1-41-tok-s-on-a-16-gb-mac-mini-m2]] — Warm decode 1.41 tok/s on a base-storage Mac mini M2, 16 GB — the first community measurement of a tier row.
-- [[records/claims/full-context-wait-about-8-minutes-at-65536]] — M5 Pro-based prefill estimate is about 8 minutes near the larger window from a 24 GB simulation
 - [[records/claims/full-context-wait-about-3-minutes-from-24-gb]] — M5 Pro-based prefill estimate is about 3 minutes near the default window from a 24 GB simulation
 - [[records/claims/decode-lookahead-11-8-to-13-5-tok-s]] — Median decode rose from 11.79 to 13.47 tok/s with decode lookahead on the development Mac
 - [[records/claims/decode-lookahead-1-11x-on-held-out-prompts]] — The decode lookahead makes decode 1.11x faster on held-out prompts
 - [[records/claims/context-read-38-minutes-at-131072]] — A 131,072-token prompt took 38 minutes to read at a 16 GB target
-- [[records/claims/persistent-prefix-default-minimum-tokens]] — The opt-in persistent prefix cache writes states of 2048 tokens or more by default
 - [[records/claims/shared-prefix-save-grid-256-tokens]] — A shared prefix is saved at the last existing prefill pass end at or before its boundary, the 256-token grid by default
 - [[records/claims/shared-prefix-minimum-512-tokens]] — A shared prefix is kept from 512 tokens; the disk tier's own minimum applies on top
 - [[records/claims/hardware-planning-range-ultra]] — Estimated warm reply range for 96 GB or more Macs
@@ -98,16 +118,12 @@ updated: 2026-09-23T04:16:53.870119Z
 - [[records/claims/automatic-target-43-2-gb-at-64-gb]] — Auto targets 43.2 GB at 64 GB with its 131,072-token window
 - [[records/claims/automatic-context-window-131072-at-64-gb]] — Auto takes a 131,072-token window at 64 GB
 - [[records/claims/auto-ceiling-34-6-gb-with-the-head]] — The auto ceiling is 34.6 GB with the draft head at the 32,768-token window
-- [[records/claims/two-tier-rows-are-measured-on-real-macs]] — Hardware reports cover the M5 Pro, M2 mini, M5 Max, and M5 Air; planner estimates remain separate.
-- [[records/claims/tier-rows-are-estimates-from-the-48-gb-curve]] — Small-memory planner estimates use the M5 Pro curve; README has broader ranges
 - [[records/claims/hardware-planning-range-low]] — Estimated warm reply range for 16 to less than 24 GB Macs
 - [[records/claims/context-state-27-kib-per-token]] — Main sequence-cache capacity costs about 27 KiB per allocated token
 - [[records/claims/engine-start-about-2-s]] — Historical engine load is about 2 s; current startup verification is additional
-- [[records/claims/mtp-auto-floor-76-per-layer-21-gb-target]] — Auto turns speculative decode on when the cache still reaches 76 experts per layer after the head, a 21 GB target
 - [[records/claims/output-byte-identical-across-cache-sizes]] — Greedy output is byte-identical across cache sizes and live resizes
 - [[records/claims/vision-tower-0-9-gb-resident]] — The vision tower costs 0.9 GB, and only when an image arrives
 - [[records/claims/io-queue-depth-flat-from-12-to-32]] — Historical development-Mac I/O concurrency comparison; no universal SSD optimum.
-- [[records/claims/auto-floor-76-experts-per-layer]] — The draft head's automatic floor is 76 experts per layer
 - [[records/claims/speculative-decode-x1-24-at-auto-floor]] — Speculative decode multiplied decode by 1.24 at the former auto floor on the dev Mac
 - [[records/claims/full-context-wait-6-4-min-on-16-gb]] — A full 32k prompt waits about 6.4 min on a 16 GB Mac
 - [[records/claims/mtp-auto-floor-120-per-layer-28-gb-target]] — Auto turns speculative decode on only when the cache still reaches 120 experts per layer after the head, a 28 GB target

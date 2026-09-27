@@ -83,7 +83,8 @@ extension Planner {
                 mtp: request.mtp, mtpAvailable: mtpAvailable, vision: request.vision,
                 visionAvailable: visionAvailable, visionResidentReserved: visionResidentReserved,
                 maxContextTokens: cap, simulated: device.isSimulated, qualification: qualification,
-                runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead)
+                runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead,
+                mtpExperts: request.mtpExperts ?? .automatic)
             if cap == request.maxContextTokens { requestedLedger = value.memoryLedger }
             try validateMemoryBudget(value, availableGB: availability)
             return value

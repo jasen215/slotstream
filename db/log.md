@@ -2022,3 +2022,84 @@ Preserved fourteen completed installed-release 2K requests, thirteen primary tim
 ## [2026-09-23 06:29] update | records/measurements/release-0-2-24-published-2026-09-23
 Published v0.2.24 from the exact CI archive and verified public installation: 73 catalogue groups/31,907 assertions, 33 native gates and 31 installed end-to-end checks passed. Preserved 72 post-release A/B requests: nullable tool streaming/type and branch reread benefits repeat; no general speed percentage qualifies under the frozen load/paging rule. Archived hashed evidence, linked historical repair follow-up and updated generated measurements.
 
+## [2026-09-23 07:28] update | records/measurements/sevra-app-speed-2026-09-23
+Measured the actual September 21 development app: three substantial replies at 10.5-12.6 tok/s, zero prompt reuse, 4.7-8.1 s to first token and 9.1 s first load. Verified stale embedded engine and explicit MTP-off desktop policy. Preserved three paired installed-engine MTP diagnostics, withheld clean gain claims because of paging and differing output, reaped the benchmark and reopened Sevra without changing its settings.
+
+## [2026-09-23 15:57] update | records/measurements/sevra-app-optimizations-2026-09-23
+Enabled fully budgeted automatic MTP, short-chat checkpoints, foreground readiness and APFS session verification in the development app; fixed stale-memory immediate reload planning. Preserved failed trials and three final alternating comparisons, passed all six real-model profiles, static/native/runtime checks and 31,907 catalogue assertions, and verified the rebuilt bundle inputs. Live-machine timings remain diagnostic; see the measurement for visible-app verification status.
+
+## [2026-09-23 16:06] update | sources/runs/2026/09/2026-09-23-sevra-verification-exact-mtime
+Strengthened the session-verification corruption test to preserve exact nanosecond mtime, inode and size. Rebuilt the checker and passed the complete scoped verification, budget, idle, sleep and resource-handoff checks. Production app and measured implementation remain unchanged.
+
+## [2026-09-23 16:45] update | sources/runs/2026/09/2026-09-23-sevra-native-replay-growth
+Completed native replay after unlock; preserved the initial between-request memory overshoot, removed the redundant warm-growth gather and admitted temporary replacement memory. Passed exact-byte and generation parity, live governor recovery, 73 catalogue groups, static gates and final native requests/reload. Updated measurements and operating policy without changing public benchmark anchors or publishing a release.
+
+## [2026-09-23 18:13] update | sources/runs/2026/09/2026-09-23-sevra-live-folder-navigation
+Replaced whole-folder inventory with live bounded native navigation, path reads and complete search continuation; preserved scoped grants, fresh-read edit checks and reviewed writes. Qualified large synthetic folders, real-model discovery after rename/edit, approval and undo, native UI and all runtime suites. Rebuilt and opened the local app, withdrew the old folder-cap claim and preserved raw evidence. No throughput or public-release claim.
+
+## [2026-09-24 07:23] create | sources/runs/2026/09/2026-09-24-sevra-window-responsiveness
+Captured offscreen window-harness output for 75430a5 and the working tree on a 1,002-thread, 9,990-message Home with scripted inference. Marked discarded because the Mac was in ordinary use; diagnostic before-and-after only, no public claim.
+
+## [2026-09-24 07:23] update | records/design/sevra-spec/runtime-contract
+Recorded write-behind saving beside the runtime, where only promised durability waits for disk and concurrent changes join the next save; draft autosave at least once a second during continuous typing; model verification starting at launch at utility priority. Full Mac check suite passed: 189 checks.
+
+## [2026-09-24 07:23] update | records/design/sevra-spec/mac-platform
+Incognito cleanup after a private reply now drops that conversation's prompt state and reusable buffers but keeps the weights loaded.
+
+## [2026-09-24 07:23] update | records/design/sevra-spec/ui-contract
+Recorded the sticky latest page, partial transcript layout that holds the reader's line while the rest is laid out, message-anchored reading positions, parallel rendering with a bounded cache of recently shown messages, and panels that cover a kept conversation. Linked diagnostic before-and-after timings; scroll checks cover the new behavior.
+
+## [2026-09-24 17:32] create | records/measurements/c5-macbook-pro-m4-max-64gb-community
+Recorded community reports C4 (#20, 64 GB M3 Max, 0.2.18), C5 (#22 and #23, one 64 GB M4 Max from its internal SSD and from a 10 Gb/s external drive, 0.2.22) and C6 (#26, 36 GB M4 Max, 0.2.22): verbatim sources with home paths redacted, three machine records, hardware rows and five claims. The 0.2.22 runs lacked the 0.2.19 forecast file; the external drive decoded 5.3 times slower than the internal SSD on the same plan.
+
+## [2026-09-24 17:32] update | records/measurements/c1-mac-mini-m2-16gb-base-storage-community-2026-09-02
+Recorded @flol's 0.2.3 re-run from issue #5, posted 2026-09-03 and never captured: 1.48 tok/s warm, and the 8,192-token prompt C1 asked for in 12.1 min (11 tok/s) against the planner's ~1.6 min. New source, hardware row beside the 0.2.2 row, and claim.
+
+## [2026-09-24 17:32] update | records/measurements/hardware-planning-ranges-2026-09-13
+The 64 GB M3 Max's 12.38 tok/s on 0.2.18 is below the 48-<96 GB floor of ~15. The floor stays until that Mac is rerun on the current release; the range's basis and claim now name the report. Medium keeps ~6-16 with the 36 GB M4 Max at 8.41 inside it.
+
+## [2026-09-24 17:32] create | records/measurements/decode-perf-2026-09-24
+Captured the decode speed experiments and the landed GPU keepalive and direct demand reads: runs, confirmation, gates and a verified archive of 2,411 files. Decided the keepalive on AC power and direct reads by default; three claims on docs/ENGINEERING.md, llms.txt and CHANGELOG.md use only comparisons with three or more pairs free of swap activity. The streamed draft head, its floor and the plain-decode lookahead are measured here and land separately. Validation: zero errors, the two historical log warnings.
+
+## [2026-09-24 17:54] update | records/measurements/c5-macbook-pro-m4-max-64gb-community
+Corrected why the forecast file was absent: through 0.2.24 only slotstream pull fetched it, so a model downloaded through the first-use offer of slotstream run lacked it as well as one downloaded before 0.2.19. The earlier text assumed the latter.
+
+## [2026-09-24 18:07] create | records/measurements/shared-prefix-boundary-upgrade-2026-09-23
+Ported @jasen215's fix and records from pull request #27, which he closed unmerged: a head written at a shared prefix's boundary is upgraded to shared instead of answered present, and skipped or failed shared saves are logged. The T1 regression passes 110 assertions and fails 7 without the condition; the live acceptance ran on his 32 GB MacBook Air. Home paths in the run log redacted.
+
+## [2026-09-24 19:28] create | sources/community/2026/09/2026-09-16-prefix-cache-min-tokens-jasen215
+Captured @jasen215's issue #17 verbatim: at 0.2.18 a 1,919-token conversation reused 0 tokens after a restart with the 2048-token disk floor and 1,966 with 1024, and a rewind to turn 1 after a restart reused 0 at either floor.
+
+## [2026-09-24 19:28] create | records/measurements/prefix-cache-floor-community-2026-09-16
+Recorded the floor comparison from issue #17 with its controls and limits, the write and restore costs that bound the tradeoff, and why the rewind case is retention by design with shared prefixes since 0.2.21.
+
+## [2026-09-24 19:28] update | records/claims/persistent-prefix-default-minimum-tokens
+The default disk floor is now 1024 tokens, supported by the issue #17 measurement; the needle follows docs/CLI.md.
+
+## [2026-09-24 19:28] update | records/design/measured-operating-policies
+The disk-tier minimum row now states 1,024 tokens, the measured restart cost that moved it from 2,048, and that nothing below 1,024 is measured.
+
+## [2026-09-24 19:31] create | records/decisions/draft-head-streams-its-experts-below-76-per-layer
+Landed the streamed draft head, its automatic floor of 28 experts per layer and the plain-decode lookahead from 20: confirmation on the landed build, a prototype cross-check, gates and a verified archive of 277 files. Decided both; reversed the 76 floor, which now marks where the head's experts stay resident; withdrew the 21 GB target claim for its 12 GB successor and added claims for 1.23x at 12 GB, the plain-decode gains, both floors and the 0.4 GB charge. Updated the window decision, the hardware guide's tier table and estimates, and the frozen fixtures (default v3, automatic v2). Validation: zero errors, the two historical log warnings.
+
+## [2026-09-24 22:55] create | records/measurements/release-0-2-25-published-2026-09-24
+Published v0.2.25 from the exact CI archive of a0cca84 and verified the public installation: 75 catalogue groups/32,004 assertions, 35 native gates and 31 installed end-to-end checks passed. The first candidate, 5a54b68, failed both elastic drills and was not tagged: the drill predicted the governor without the reserve of the lookahead that plain decode now runs; the fix changed only the drill. Archived 233 hashed files with both candidates' logs, added the run and the measurement, regenerated MEASUREMENTS.md. Validation: zero errors, the two historical log warnings.
+
+## [2026-09-26 16:03] create | records/machines/macbook-pro-m4-pro-24gb
+Registered the 24 GB M4 Pro from issue #41 (512 GB SSD, macOS 26.6.2).
+
+## [2026-09-26 16:03] create | sources/community/2026/09/2026-09-25-macbook-pro-m4-pro-24gb-davidcavazos
+Captured @davidcavazos's issue #41 and his follow-up comment verbatim; one home path in the weights line redacted.
+
+## [2026-09-26 16:03] create | records/measurements/c7-macbook-pro-m4-pro-24gb-community
+C7: 3.57 tok/s warm on 0.2.24, 3.85 to 3.97 in a later round, against a ~8 tok/s estimate; cold reads at 3.7 GB/s, and no draft head or lookahead at 24 GB before 0.2.25. Renumbered C2 to C6 to orders 711 to 715 so the community reports stay in number order.
+
+## [2026-09-26 16:03] create | records/claims/warm-decode-m4-pro-24gb-community
+Needle 3.57 tok/s on the hardware guide's summary row.
+
+## [2026-09-26 16:03] update | records/claims/hardware-planning-range-medium
+The 24 GB report sits below the ~6 floor; the range stays until a 0.2.25 rerun, and the first sentence now states ~6-16, the value since the 2026-09-16 re-anchor.
+
+## [2026-09-26 16:03] update | records/measurements/hardware-planning-ranges-2026-09-13
+Added the 24 GB M4 Pro report and why the floor stays pending a 0.2.25 rerun.
+

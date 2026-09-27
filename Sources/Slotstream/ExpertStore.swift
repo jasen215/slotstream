@@ -312,6 +312,51 @@ public final class ExpertStore {
         return stagingArrays(buffers, rows: n)
     }
 
+    /// Read each record's nine pieces into per-lane host scratch and copy them
+    /// into the pool slots chosen for them: the demand path without staging
+    /// arrays or a GPU scatter. A file read never targets GPU-shared memory,
+    /// the rule slot adoption follows too; the slot only ever sees a memory
+    /// copy. The caller unmaps the destination slots before calling and
+    /// publishes the records only after every lane has joined, so a failed
+    /// read leaves empty slots rather than a mapping over partly replaced
+    /// bytes. The original checkpoint layout only: a packed layout keeps the
+    /// staging path, which owns its read-failure fallback.
+    package func readIntoSlotsChecked(_ keys: [ExpertKey], slots: [Int], bases: [UnsafeMutableRawPointer],
+                                      scratch: ExpertPrefetchScratch,
+                                      queueDepth: Int = ExpertStore.poolQueueDepth) throws {
+        let n = keys.count
+        guard n > 0, slots.count == n, bases.count == 9, pieceRowBytes.count == 9, !supportsRecordReads else {
+            throw CheckpointReadError.invalidRange
+        }
+        for key in keys where key.layer < 0 || key.layer >= cfg.numLayers || key.expert < 0 || key.expert >= cfg.numExperts {
+            throw SlotPoolError.invalidKey(key)
+        }
+        let failure = JoinedReadFailure()
+        let rowBytes = pieceRowBytes
+        // 9n reads spread across worker lanes in the staging path's order.
+        let jobs = n * 9
+        let lanes = min(max(queueDepth, 1), jobs)
+        DispatchQueue.concurrentPerform(iterations: lanes) { lane in
+            guard let (buffer, temporary) = scratch.acquire() else {
+                failure.record(ModelError("out of memory for a demand read buffer"))
+                return
+            }
+            defer { scratch.release(buffer, temporary: temporary) }
+            var j = lane
+            while j < jobs {
+                let (record, piece) = (j / 9, j % 9)
+                let key = keys[record]
+                let bytes = rowBytes[piece]
+                do {
+                    try read(into: buffer, layer: key.layer, piece: piece, offset: key.expert * bytes, count: bytes)
+                    memcpy(bases[piece] + slots[record] * bytes, buffer, bytes)
+                } catch { failure.record(error) }
+                j += lanes
+            }
+        }
+        try failure.finish()
+    }
+
     /// Read one layer's experts, ascending ids, into fresh staging arrays
     /// (one per piece; row j holds experts[j]) for the prefill sweep. They
     /// never enter the slot pool. Consecutive ids are one pread per piece: a
@@ -470,6 +515,15 @@ public final class SlotPool {
     public private(set) var slotScatterBatches = 0
     package var layerLocalFloorEviction = false
     public private(set) var floorLocalVictims = 0
+    /// Demand misses are read straight into their slots
+    /// (`ExpertStore.readIntoSlotsChecked`) instead of staged and scattered on
+    /// the GPU. It skips one batch of staging arrays, one scatter per piece and
+    /// the GPU sync each scatter cost, per layer that misses.
+    package var directDemandReads = false
+    /// One piece-sized host buffer per demand lane, plus a few spare.
+    private lazy var demandScratch = ExpertPrefetchScratch(pieceBytes: store.pieceRowBytes.max() ?? 1,
+                                                           count: ExpertStore.poolQueueDepth + 4)
+    public private(set) var slotDirectBatches = 0
     package var denseLookup = false {
         didSet { map.configure(dense: denseLookup) }
     }
@@ -589,10 +643,27 @@ public final class SlotPool {
     /// Resize the pool. Must only be called between requests (the caller holds
     /// the engine's generation lock); stale pins are cleared, not honored.
     ///
-    /// Grow keeps the cached contents: each piece is gathered into its larger
-    /// replacement one at a time, so the transient overhead stays bounded by
-    /// one piece — and growth only happens when availability covers the new
-    /// pool anyway. Shrink FREES the old tensors before allocating the small
+    /// Extra live bytes needed by a warm growth, including the replacement
+    /// piece, its zero-filled tail and previously grown pieces. The caller
+    /// must admit this transient separately from the final pool size.
+    package func growthTransientBytes(to newSlots: Int) -> Int {
+        guard newSlots > slots else { return 0 }
+        let old = Self.poolShapes(slots, cfg)
+        let next = Self.poolShapes(newSlots, cfg)
+        var added = 0, peak = 0
+        for (before, after) in zip(old, next) {
+            let oldBytes = before.shape.reduce(before.dtype.size, *)
+            let newBytes = after.shape.reduce(after.dtype.size, *)
+            let tail = newBytes - oldBytes
+            peak = max(peak, added + newBytes + tail)
+            added += tail
+        }
+        return peak
+    }
+
+    /// Grow keeps slot indices and appends zeroed capacity one piece at a
+    /// time. Gathering every occupied row first needlessly materialized a
+    /// second large tensor. Shrink FREES the old tensors before allocating the small
     /// ones (transient = max(old, new), never the sum) and restarts cold:
     /// shrink happens under memory pressure, where holding two pools to
     /// preserve cache warmth would spike memory at exactly the wrong moment.
@@ -612,28 +683,20 @@ public final class SlotPool {
         poolWriteEpoch &+= 1
         basesCache = nil
         if n > slots {
-            // grow, preserving contents in the slot-index prefix
-            let occupied = (0 ..< slots).filter { keyOf[$0] != nil }
-            let idx = MLXArray(occupied.map(Int32.init))
-            var newKeyOf: [ExpertKey?] = Array(repeating: nil, count: n)
-            var newRef = Array(repeating: false, count: n)
-            map.removeAll(keepingCapacity: true)
-            for (i, s) in occupied.enumerated() {
-                newKeyOf[i] = keyOf[s]
-                newRef[i] = refBit[s]
-                map[keyOf[s]!] = i
-            }
-            for (p, spec) in Self.poolShapes(n, cfg).enumerated() {
-                let np = MLXArray.zeros(spec.shape, dtype: spec.dtype)
-                if !occupied.isEmpty { np[0 ..< occupied.count] = pools[p][idx] }
+            // Keep holes and mappings in place. Only the new tail is zeroed;
+            // no full-pool gather or indexed-update temporary is necessary.
+            eval(pools)
+            for (p, spec) in Self.poolShapes(n - slots, cfg).enumerated() {
+                let np = concatenated([pools[p], MLXArray.zeros(spec.shape, dtype: spec.dtype)], axis: 0)
                 eval(np)
                 pools[p] = np  // old piece freed here, bounding the transient
+                MLX.Memory.clearCache()
             }
-            keyOf = newKeyOf
-            refBit = newRef
+            keyOf += Array(repeating: nil, count: n - slots)
+            refBit += Array(repeating: false, count: n - slots)
             pinned = SlotPins(count: n, sparse: sparsePinClearing)
             pinned.configure(depth: pinGenerations)
-            hand = occupied.count % n
+            hand = slots
         } else {
             // shrink: free first, allocate after, start cold
             pools = []
@@ -900,11 +963,48 @@ public final class SlotPool {
             // Bound staging independently of how many unique experts this
             // token batch routed. Evaluating each scatter before reading the
             // next slice lets the prior raw buffers be released immediately.
+            // Direct reads copy into pool memory from the CPU, so they stay off
+            // while resident GPU readers may still be running (the overlapping
+            // path's contract), while a transfer profile measures the staged
+            // scatter, and under the explicit slot-write experiments.
+            let direct = directDemandReads && reservedHits == nil && transferProfile == nil
+                && !store.supportsRecordReads && !cpuSlotWrites && !wordSlotWrites && !contiguousSlotWrites
             func readDemand(_ order: [Int]) throws {
                 var lo = 0
                 while lo < order.count {
                     let hi = min(lo + ExpertStore.defaultLoadBatch, order.count)
                     let batchIndices = Array(order[lo ..< hi])
+                    if direct, let bases = currentPoolBases() {
+                        let destinations = batchIndices.map { Int(slotIdx[$0]) }
+                        // Unmap every victim before its bytes change. Pins keep
+                        // every slot an unevaluated gather still reads out of the
+                        // victim scan, the invariant slot adoption relies on.
+                        for s in destinations {
+                            if let old = keyOf[s] { map.removeValue(forKey: old); keyOf[s] = nil }
+                        }
+                        let tIO = RuntimeClock.now()
+                        laneBudget?.beginDemand()
+                        do {
+                            try store.readIntoSlotsChecked(batchIndices.map { missKeys[$0] }, slots: destinations,
+                                                           bases: bases, scratch: demandScratch)
+                        } catch {
+                            laneBudget?.endDemand()
+                            ioSeconds += RuntimeClock.seconds(since: tIO)
+                            throw error
+                        }
+                        laneBudget?.endDemand()
+                        ioSeconds += RuntimeClock.seconds(since: tIO)
+                        for j in batchIndices {
+                            let s = Int(slotIdx[j])
+                            keyOf[s] = missKeys[j]
+                            map[missKeys[j]] = s
+                            refBit[s] = true
+                        }
+                        slotDirectBatches += 1
+                        recordsFetched += hi - lo
+                        lo = hi
+                        continue
+                    }
                     let tIO = RuntimeClock.now()
                     let batch: [MLXArray]
                     laneBudget?.beginDemand()
@@ -1326,6 +1426,7 @@ public final class SlotPool {
         slotWordBatches = 0
         slotWordBuffers = 0
         slotCPUBatches = 0
+        slotDirectBatches = 0
         floorLocalVictims = 0
         hits = 0
         misses = 0

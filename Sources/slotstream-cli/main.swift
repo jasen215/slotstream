@@ -16,7 +16,7 @@ struct Slotstream: ParsableCommand {
             NgramGolden.self, DequantGolden.self, TemplateCheck.self, SamplerGolden.self, GovernorCheck.self,
             PrefixCheck.self, PrefixExactCheck.self, ElasticDrill.self, RuntimeCheck.self, PullCheck.self,
             MTPParity.self, MTPAccept.self, MTPCheck.self, MTPRowCheck.self, MTPFixtureInputs.self, MTPBench.self, MTPPassCost.self,
-            ContextCheck.self, PrefillScheduleCommand.self, SweepCheck.self,
+            ContextCheck.self, PrefillScheduleCommand.self, SweepCheck.self, DecodeOverlapCheck.self, DraftStreamCheck.self,
             VisionParity.self, OptimizationStateCheck.self, PackExperts.self,
             ExpertLookaheadCapture.self, ExpertLookaheadBench.self, ExpertLookaheadCheck.self, ExpertLookaheadPredict.self,
         ]
@@ -115,12 +115,15 @@ struct ModelOptions: ParsableArguments {
             discussion: """
                 The model's own next-next-token head drafts \(Generator.defaultDraftDepth) tokens by default \
                 and the main model verifies them in one batched pass. \
-                SLOTSTREAM_DRAFT_DEPTH overrides the depth (1...16). Costs \
-                a fixed 1.6 GB of memory; auto enables it only when the \
-                expert cache still reaches ~120 experts/layer after paying, \
-                which is where the multiplier beats spending the same RAM on \
-                cache. Needs the separately converted mtp.safetensors next \
-                to the model (Tools/mtp_convert.py).
+                SLOTSTREAM_DRAFT_DEPTH overrides the depth (1...16). On a \
+                cache of 76 experts/layer or more its experts stay resident \
+                (1.6 GB); below that they stream through a small cache \
+                (0.4 GB). auto enables it when the expert cache still \
+                reaches 28 experts/layer after paying, the smallest cache \
+                where it was measured faster; without it, the decode \
+                lookahead runs in plain decode. SLOTSTREAM_MTP_EXPERTS \
+                forces resident or streamed. Needs the separately converted \
+                mtp.safetensors next to the model (Tools/mtp_convert.py).
                 """))
     var mtp: String = "auto"
 
@@ -137,6 +140,28 @@ struct ModelOptions: ParsableArguments {
                 insufficient. off refuses images outright.
                 """))
     var vision: String = "auto"
+
+    @Option(
+        name: .customLong("gpu-keepalive"),
+        help: ArgumentHelp(
+            "Keep the GPU awake while generating: auto | on | off (default auto).",
+            discussion: """
+                Streamed decode leaves the GPU idle between short bursts, and \
+                an idle GPU clocks down and starts the next burst late. A tiny \
+                kernel keeps it busy while a request generates: faster decode \
+                for somewhat more energy per token. auto keeps it on with AC \
+                power outside Low Power Mode and off on battery. \
+                SLOTSTREAM_GPU_KEEPALIVE sets the default.
+                """))
+    var gpuKeepAlive: String?
+
+    func gpuKeepAlivePolicy() throws -> GPUKeepAlive.Policy {
+        guard let gpuKeepAlive else { return try GPUKeepAlive.environmentPolicy() }
+        guard let policy = GPUKeepAlive.Policy(rawValue: gpuKeepAlive) else {
+            throw PlanError("--gpu-keepalive must be auto, on, or off (got \(gpuKeepAlive))")
+        }
+        return policy
+    }
 
     // Resolved once here so the tokenizer, the draft-head probe, and the index
     // all see the real directory; Foundation will not list a symlinked one.
@@ -198,7 +223,8 @@ struct ModelOptions: ParsableArguments {
             mtp: requireMTP ? .on : requestedMTP, mtpAvailable: MTPWeights.present(modelDir: modelURL),
             vision: visionMode(), visionAvailable: visionAvailable(),
             maxContextTokens: maxContext, qualification: qualification,
-            runtimePolicy: policy, decodeLookahead: DecodeLookaheadPlanning.environment(modelDirectory: modelURL))
+            runtimePolicy: policy, decodeLookahead: DecodeLookaheadPlanning.environment(modelDirectory: modelURL),
+            mtpExperts: try Planner.MTPExpertPlacement.environment())
         let plan = try runtimePlan(base, prefixCacheEnabled: prefixCacheEnabled).withRequestPolicy(configuration)
         if plan.source == .auto || plan.source == .memoryGB {
             try Planner.validateMemoryBudget(plan, availableGB: plan.availableGB)
@@ -217,8 +243,9 @@ struct ModelOptions: ParsableArguments {
         }
         _ = try ContextConfiguration(maxPrefillWaitMinutes: maxPrefillWait)
         let policy = try runtimePolicy(prefixCacheEnabled: prefixCacheEnabled)
-        let request = PlanRequest(expertsPerLayer: expertsPerLayer, poolGB: poolGB, memoryGB: memoryGB, memoryLimitGB: memoryLimitGB,
+        var request = PlanRequest(expertsPerLayer: expertsPerLayer, poolGB: poolGB, memoryGB: memoryGB, memoryLimitGB: memoryLimitGB,
             maxRAMPercent: maxRAMPercent, mtp: try mtpMode(), vision: try visionMode())
+        request.mtpExperts = try Planner.MTPExpertPlacement.environment()
         try ensureWeights()
         let resolved = try Planner.resolveContextWindow(.automatic, request: request, on: .current(),
             mtpAvailable: MTPWeights.present(modelDir: modelURL), visionAvailable: visionAvailable(),
@@ -240,8 +267,9 @@ struct ModelOptions: ParsableArguments {
     /// The window `serve --max-context auto` would choose on this Mac now,
     /// with these options. Prints nothing and downloads nothing.
     func automaticWindow() throws -> Int {
-        let request = PlanRequest(expertsPerLayer: expertsPerLayer, poolGB: poolGB, memoryGB: memoryGB, memoryLimitGB: memoryLimitGB,
+        var request = PlanRequest(expertsPerLayer: expertsPerLayer, poolGB: poolGB, memoryGB: memoryGB, memoryLimitGB: memoryLimitGB,
             maxRAMPercent: maxRAMPercent, mtp: try mtpMode(), vision: try visionMode())
+        request.mtpExperts = try Planner.MTPExpertPlacement.environment()
         return try Planner.resolveContextWindow(.automatic, request: request, on: .current(),
             mtpAvailable: MTPWeights.present(modelDir: modelURL), visionAvailable: visionAvailable(),
             runtimePolicy: try runtimePolicy(),
@@ -322,6 +350,10 @@ struct ModelOptions: ParsableArguments {
         case .some(true):
             try withInterruptiblePull { cancellation in
                 try WeightStore.download(to: url, transport: .automatic, cancellation: cancellation, log: { print($0); fflush(stdout) })
+                // The same optional forecast sidecar `slotstream pull` fetches.
+                for file in TapCorrectionSidecar.files {
+                    TapCorrectionSidecar.ensure(modelDir: url, file: file, cancellation: cancellation, log: { print($0); fflush(stdout) })
+                }
             }
         case .some(false):
             throw PlanError("not downloading — when you are ready:  slotstream pull")
@@ -413,9 +445,11 @@ struct Run: ParsableCommand {
         let sem = DispatchSemaphore(value: 0)
         var result: Result<Void, Error> = .success(())
         let plan = try model.announcedPlan(window: maxContext, maxPrefillWait: maxPrefillWait)
+        let keepAlive = try model.gpuKeepAlivePolicy()
         Task {
             do {
                 let engine = try await Engine(modelDir: model.modelURL, plan: plan)
+                engine.gpuKeepAlive = keepAlive
                 let loadSeconds = RuntimeClock.seconds(since: launchStart)
                 engine.generator.footprintSampling = sampleFootprint
                 let control = try engine.beginRequest()
@@ -655,6 +689,7 @@ struct Serve: ParsableCommand {
         let plan = try model.announcedPlan(window: maxContext, prefixCacheEnabled: !noPrefixCache, maxPrefillWait: maxPrefillWait)
         // Claim the port first: failing here after a full model load wastes
         // half a minute and used to be a fatalError.
+        let keepAlive = try model.gpuKeepAlivePolicy()
         let listenFD = try Server.bindPort(port)
         let sem = DispatchSemaphore(value: 0)
         var engine: Engine!
@@ -665,6 +700,7 @@ struct Serve: ParsableCommand {
         }
         sem.wait()
         if let e = err { throw e }
+        engine.gpuKeepAlive = keepAlive
         engine.maxContextTokens = plan.maxContextTokens
         // Long prompts announce themselves in the server log with the wait to
         // expect, then report elapsed progress, including a slow short suffix.
@@ -689,8 +725,20 @@ struct Serve: ParsableCommand {
                 "prefix cache: off — every request re-prefills its whole prompt\n"
                     .data(using: .utf8)!)
         }
+        var diskTier: PersistentPrefixCache?
         if let persistentConfiguration {
-            let tier = try engine.enablePersistentPrefixCache(persistentConfiguration)
+            do {
+                diskTier = try engine.enablePersistentPrefixCache(persistentConfiguration)
+            } catch let error as PersistentPrefixCache.UnreadableFile {
+                // A file the system refused to read may still hold a valid
+                // state, so keep it and serve from the memory tier instead of
+                // refusing to start.
+                FileHandle.standardError.write(
+                    ("prefix cache disk: off, \(error). The files are kept: fix that file's permissions or run "
+                        + "`slotstream prefix-cache --clear`, then restart the server.\n").data(using: .utf8)!)
+            }
+        }
+        if let persistentConfiguration, let tier = diskTier {
             tier.onEvent = { line in
                 let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
                 FileHandle.standardError.write("[\(stamp)] prefix cache disk: \(line)\n".data(using: .utf8)!)
@@ -827,6 +875,12 @@ struct Parity: ParsableCommand {
                 var maxAbs: Float = 0
                 var refScale: Float = 0
                 for i in 0 ..< ref.count {
+                    guard ref[i].isFinite else {
+                        throw ValidationError("layer \(l) reference contains a non-finite value at index \(i)")
+                    }
+                    guard got[i].isFinite else {
+                        throw ValidationError("layer \(l) generated dump contains a non-finite value at index \(i)")
+                    }
                     maxAbs = max(maxAbs, abs(ref[i] - got[i]))
                     refScale = max(refScale, abs(ref[i]))
                 }
@@ -877,8 +931,22 @@ struct Doctor: ParsableCommand {
         let fm = FileManager.default
         let remaining = WeightStore.remainingBytes(at: url)
         if remaining == 0 {
-            return String(format: "weights: present by size, %.1f GB at %@ (run pull --verify for hashes)",
-                          Double(PinnedModel.totalBytes) / 1e9, url.path)
+            let line = String(format: "weights: present by size, %.1f GB at %@ (run pull --verify for hashes)",
+                              Double(PinnedModel.totalBytes) / 1e9, url.path)
+            // A model downloaded before 0.2.19, or by a download that skipped
+            // the forecast sidecar, decodes with the earlier forecast until
+            // `pull` fetches it.
+            let sidecar = TapCorrectionSidecar.attention
+            switch TapCorrectionSidecar.status(modelDir: url, file: sidecar) {
+            case .present:
+                return line
+            case .absent:
+                return line + "\nforecast: \(sidecar.path) is missing, so decode uses the earlier, slower forecast;"
+                    + " `slotstream pull` downloads it (37.5 MB)"
+            case .mismatched(let why):
+                return line + "\nforecast: \(sidecar.path) does not match the pinned file (\(why));"
+                    + " `slotstream pull` replaces it"
+            }
         }
         var probe = url
         while !fm.fileExists(atPath: probe.path), probe.path != "/" {
@@ -936,9 +1004,10 @@ struct Doctor: ParsableCommand {
         if let tokens = self.maxContext.tokens {
             maxContext = tokens
         } else {
-            let tierRequest = PlanRequest(expertsPerLayer: model.expertsPerLayer, poolGB: model.poolGB,
+            var tierRequest = PlanRequest(expertsPerLayer: model.expertsPerLayer, poolGB: model.poolGB,
                 memoryGB: model.memoryGB, memoryLimitGB: model.memoryLimitGB, maxRAMPercent: model.maxRAMPercent,
                 mtp: try model.mtpMode(), vision: try model.visionMode())
+            tierRequest.mtpExperts = try Planner.MTPExpertPlacement.environment()
             let mtpPresent = MTPWeights.present(modelDir: model.modelURL)
             let visionPresent = model.visionAvailable()
             let policy = try model.runtimePolicy()
@@ -955,9 +1024,10 @@ struct Doctor: ParsableCommand {
             }
         }
         let configuration = try ContextConfiguration(maxContextTokens: maxContext, maxPrefillWaitMinutes: maxPrefillWait)
-        let request = PlanRequest(expertsPerLayer: model.expertsPerLayer, poolGB: model.poolGB,
+        var request = PlanRequest(expertsPerLayer: model.expertsPerLayer, poolGB: model.poolGB,
             memoryGB: model.memoryGB, memoryLimitGB: model.memoryLimitGB, maxRAMPercent: model.maxRAMPercent,
             mtp: try model.mtpMode(), vision: try model.visionMode(), maxContextTokens: maxContext)
+        request.mtpExperts = try Planner.MTPExpertPlacement.environment()
         let feasibility = Planner.contextFeasibility(request, on: device,
             mtpAvailable: MTPWeights.present(modelDir: model.modelURL),
             visionAvailable: model.visionAvailable(), runtimePolicy: try model.runtimePolicy(),
@@ -971,7 +1041,8 @@ struct Doctor: ParsableCommand {
                 mtp: model.mtpMode(), mtpAvailable: MTPWeights.present(modelDir: model.modelURL),
                 vision: model.visionMode(), visionAvailable: model.visionAvailable(),
                 maxContextTokens: maxContext, simulated: device.isSimulated, qualification: false,
-                runtimePolicy: model.runtimePolicy(), decodeLookahead: lookahead)
+                runtimePolicy: model.runtimePolicy(), decodeLookahead: lookahead,
+                mtpExperts: try Planner.MTPExpertPlacement.environment())
         } else { advisory = nil }
         guard let requestedPlan = feasibility.requestedPlan ?? advisory else {
             if asJSON {
@@ -1354,11 +1425,14 @@ struct ElasticDrill: ParsableCommand {
                 let smallRecovery = Geometry.gb(s0 - Geometry.floorSlots) < 2
                 let shrinkAvailability = smallRecovery ? min(realAvail, target + 3) : 2.0
                 Planner.availabilityOverride = shrinkAvailability
+                // A plain-decode plan can run the decode lookahead. The governor
+                // keeps its reserve across re-plans, so predict with it too.
                 func inputs(at available: Double) -> GovernorPolicy.Inputs {
                     GovernorPolicy.Inputs(currentSlots: engine.model.pool.slots, availableGB: available,
                         ramGB: plan.ramGB, workingSetGB: plan.workingSetGB, ramPercent: plan.ramPercent,
                         maxContextTokens: engine.maxContextTokens,
                         ownedAdditionalBytes: engine.prefixCache.ownedAdditionalBytes(mtpResident: false),
+                        decodeLookahead: plan.decodeLookahead, lookaheadReserveBytes: plan.lookaheadReserveBytes,
                         memoryLimitGB: plan.memoryLimitGB)
                 }
                 func pollBounded(pressure: GovernorPolicy.Pressure? = nil) throws {

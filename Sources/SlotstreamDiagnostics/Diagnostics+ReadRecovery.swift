@@ -3,7 +3,7 @@ import MLX
 import Slotstream
 
 extension Diagnostics {
-    public static func optimizationRequestReadRecovery(modelDir: URL, mtp: Bool, lookahead: Bool = false, slotSlices: Bool = false, wordWrites: Bool = false, cpuWrites: Bool = false, residentOverlap: Bool = false) throws -> CheckReport {
+    public static func optimizationRequestReadRecovery(modelDir: URL, mtp: Bool, lookahead: Bool = false, slotSlices: Bool = false, wordWrites: Bool = false, cpuWrites: Bool = false, residentOverlap: Bool = false, directReads: Bool = false) throws -> CheckReport {
         MLX.Memory.cacheLimit = 128 << 20
         let model = try Qwen4ExpModel(index: CheckpointIndex(dir: modelDir), poolSlots: 640)
         if mtp { try model.enableMTP(modelDir: modelDir) }
@@ -12,7 +12,7 @@ extension Diagnostics {
         generator.footprintSampling = true; generator.speculationEnabled = mtp; generator.draftDepth = 1
         var params = SampleParams.greedy; params.maxTokens = 4; params.seed = 7
         let seedIds = (0..<17).map { 1000 + $0*79 }
-        var c = CheckBuilder("optimization-request-read-recovery\(mtp ? "-mtp" : "")\(lookahead ? "-lookahead" : "")")
+        var c = CheckBuilder("optimization-request-read-recovery\(mtp ? "-mtp" : "")\(lookahead ? "-lookahead" : "")\(directReads ? "-direct" : "")")
         let cases: [(String,Int,Bool,Bool,Bool)] = [
             ("pool prefill",17,false,false,false),
             ("ngram prefill",17,true,false,false),
@@ -29,6 +29,7 @@ extension Diagnostics {
             options.wordSlotWrites = wordWrites
             options.cpuSlotWrites = cpuWrites
             options.overlapResidentExperts = residentOverlap
+            options.directDemandReads = directReads ? true : nil
             options.compactStateWindows = true; options.skipUnusedFinalForward = true
             options.compactMTPRow = true
             if scope {
@@ -93,6 +94,7 @@ extension Diagnostics {
             options.wordSlotWrites = wordWrites
             options.cpuSlotWrites = cpuWrites
             options.overlapResidentExperts = residentOverlap
+            options.directDemandReads = directReads ? true : nil
             options.compactStateWindows = true; options.compactMTPRow = true; options.skipUnusedFinalForward = true
             model.optimizations = options
             let reference = generator.generate(promptIds: seedIds,params: params,eosIds: [])
@@ -127,10 +129,10 @@ extension Diagnostics {
         return c.report()
     }
 
-    public static func optimizationReadRecovery(modelDir: URL, slotSlices: Bool = false, wordWrites: Bool = false, cpuWrites: Bool = false) throws -> CheckReport {
+    public static func optimizationReadRecovery(modelDir: URL, slotSlices: Bool = false, wordWrites: Bool = false, cpuWrites: Bool = false, directReads: Bool = false) throws -> CheckReport {
         MLX.Memory.cacheLimit = 64 << 20
         let store = try ExpertStore(index: CheckpointIndex(dir: modelDir))
-        var c = CheckBuilder("optimization-read-recovery")
+        var c = CheckBuilder("optimization-read-recovery\(directReads ? "-direct" : "")")
         let old = (0..<40).map { ExpertKey(5, $0) }
         let incoming = (0..<34).map { ExpertKey(0, $0) }
         func bytesEqual(_ label: String, _ pool: SlotPool, _ keys: [ExpertKey]) throws {
@@ -151,6 +153,7 @@ extension Diagnostics {
                     pool.contiguousSlotWrites = slotSlices
                     pool.wordSlotWrites = wordWrites
                     pool.cpuSlotWrites = cpuWrites
+                    pool.directDemandReads = directReads
                     pool.denseLookup = dense; pool.sparsePinClearing = sparse; pool.directReadHandles = direct
                     _ = try pool.ensureChecked(old); pool.unpinAll()
                     _ = try pool.ensureChecked([old[0]])
@@ -165,9 +168,20 @@ extension Diagnostics {
                     c.equal("\(label): first failure restores prior pins",pool.pinnedSlotCount,1)
                     c.equal("\(label): no failed record counted complete",pool.recordsFetched,0)
                     c.expect("\(label): no new mapping after failed first batch",!pool.isResident(incoming[0]))
-                    c.expect("\(label): all original mappings remain",old.allSatisfy { pool.isResident($0) })
+                    if directReads {
+                        // A direct read replaces the victim's bytes in place, so the
+                        // victim is unmapped before the read, never left stale. The
+                        // failed batch had one victim; every other record stays.
+                        c.equal("\(label): only the failed batch's victim is unmapped",
+                            old.filter { !pool.isResident($0) }.count, 1)
+                        c.expect("\(label): requested hits survive the failure",
+                            pool.isResident(old[0]) && pool.isResident(old[1]))
+                        c.equal("\(label): a failed direct batch is not counted",pool.slotDirectBatches,0)
+                    } else {
+                        c.expect("\(label): all original mappings remain",old.allSatisfy { pool.isResident($0) })
+                    }
                     pool.readFault = nil
-                    try bytesEqual("\(label): original data after failure",pool,old)
+                    try bytesEqual("\(label): original data after failure",pool,old.filter { pool.isResident($0) })
 
                     // First 32-record batch succeeds; the next batch has one
                     // failed piece and other successful worker writes. None of
@@ -196,6 +210,7 @@ extension Diagnostics {
                     c.equal("\(label): first duplicate retains alias",locations[2],locations[36])
                     c.equal("\(label): last duplicate retains alias",locations[35],locations[37])
                     try bytesEqual("\(label): successful retry",pool,[old[0],old[1]]+incoming)
+                    if directReads { c.expect("\(label): the retry read directly into its slots",pool.slotDirectBatches > 0) }
                     pool.unpinAll(); pool.resize(to: 2)
                     _ = try pool.ensureChecked([incoming[32],incoming[33]])
                     try bytesEqual("\(label): resize after recovery",pool,Array(incoming.suffix(2)))

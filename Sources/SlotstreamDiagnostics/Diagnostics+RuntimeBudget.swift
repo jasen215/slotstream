@@ -36,7 +36,8 @@ extension Diagnostics {
             availableGB: 0, clamped: true, prefillChunk: plan.prefillChunk,
             prefixCacheTokens: plan.prefixCacheTokens, mtpEnabled: plan.mtpEnabled,
             visionEnabled: plan.visionEnabled, maxContextTokens: plan.maxContextTokens,
-            notes: ["bounded governor diagnostic: only shrinking is exercised"], runtimeAllocationPolicy: policy))
+            notes: ["bounded governor diagnostic: only shrinking is exercised"], runtimeAllocationPolicy: policy,
+            memoryLimitGB: nil, mtpStreamedExperts: plan.mtpStreamedExperts))
         let governor = MemoryGovernor(engine: engine)
         let expectedDonation = GovernorPolicy.desiredSlots(GovernorPolicy.Inputs(
             currentSlots: plan.slots, availableGB: 0, ramGB: plan.ramGB,

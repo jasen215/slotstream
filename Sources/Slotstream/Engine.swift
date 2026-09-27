@@ -135,7 +135,7 @@ public final class Engine {
                     notes: p.notes, simulated: p.simulated, runtimeAllocationPolicy: p.runtimeAllocationPolicy,
                     maxPrefillWaitMinutes: p.maxPrefillWaitMinutes, contextQualification: p.contextQualification,
                     lookaheadReserveBytes: p.lookaheadReserveBytes, decodeLookahead: p.decodeLookahead,
-                    memoryLimitGB: p.memoryLimitGB))
+                    memoryLimitGB: p.memoryLimitGB, mtpStreamedExperts: p.mtpStreamedExperts))
             }
         }
     }
@@ -261,6 +261,21 @@ public final class Engine {
     }
 
     private let lock = GenerationGate()
+    private var shortPromptPrefill: (limit: Int, chunk: Int)?
+
+    /// An embedding may favor earlier checkpoints for short conversations.
+    /// The full planned workspace stays reserved. Zero disables this policy.
+    /// Selection runs under the generation gate, after any governor resize,
+    /// and never exceeds the current plan. Existing CLI behavior is unchanged.
+    public func configureShortPromptPrefill(maxPromptTokens: Int, chunk: Int) throws {
+        guard (0...ContextPolicy.modelLimit).contains(maxPromptTokens), (256...4096).contains(chunk) else {
+            throw PlanError("short-prompt prefill requires a supported token limit and a chunk between 256 and 4096")
+        }
+        withExclusive {
+            shortPromptPrefill = maxPromptTokens == 0 ? nil : (maxPromptTokens, chunk)
+            if maxPromptTokens == 0, let plan = currentPlan { generator.prefillChunk = plan.prefillChunk }
+        }
+    }
     package let pressureBoundary = PressureBoundary()
     // Immutable after startup, so the governor never reads mutable model
     // controls concurrently with a request changing its diagnostic options.
@@ -305,6 +320,11 @@ public final class Engine {
     public convenience init(modelDir: URL, plan: MemoryPlan) async throws {
         try await self.init(modelDir: modelDir, poolSlots: plan.slots, plan: plan)
     }
+
+    /// Whether generations keep the GPU awake (`GPUKeepAlive`). The default
+    /// comes from SLOTSTREAM_GPU_KEEPALIVE, `auto` when unset or invalid; the
+    /// CLI validates its own flag.
+    public var gpuKeepAlive: GPUKeepAlive.Policy = (try? GPUKeepAlive.environmentPolicy()) ?? .auto
 
     public init(modelDir: URL, poolSlots: Int, plan: MemoryPlan? = nil) async throws {
         // A plan made for a simulated machine may be printed and compared,
@@ -386,15 +406,15 @@ public final class Engine {
         // nothing is allocated until an image actually arrives.
         self.visionAvailable = VisionTower.present(index: index)
         self.visionAllowed = plan?.visionEnabled ?? visionAvailable
-        if plan?.mtpEnabled == true {
-            try model.enableMTP(modelDir: modelDir)
+        if let plan, plan.mtpEnabled {
+            try model.enableMTP(modelDir: modelDir, streamedExperts: plan.mtpStreamedExperts)
         }
         self.generator = Generator(model: model)
         if prefetchConfiguration.active {
-            if model.mtpHead == nil {
-                // The qualified mode is MTP text decode. Without the draft
-                // head there are no start features; ordinary demand loading
-                // stays in force and the bypass is announced, not hidden.
+            if model.mtpHead == nil && !qualifiedLookahead {
+                // An experimental prefetch was tuned for MTP text decode.
+                // Without the draft head there are no start features; ordinary
+                // demand loading stays in force and the bypass is announced.
                 FileHandle.standardError.write(
                     "[expert-lookahead] prefetch requested without the MTP draft head; ordinary demand loading stays active\n"
                         .data(using: .utf8)!)
@@ -410,6 +430,9 @@ public final class Engine {
                 if prefetchConfiguration.adoption == .slot { model.pool.attachSpeculativeSlots(to: scheduler) }
                 let session = ExpertLookaheadSession()
                 session.prefetch = scheduler
+                // A plan that chose the lookahead without the head runs it
+                // in plain decode, forecasting from each pass's own layers.
+                session.forecastsPlainPasses = model.mtpHead == nil
                 model.lookahead = session
                 if qualifiedLookahead {
                     // The rest of the qualified configuration. An explicit
@@ -1123,6 +1146,12 @@ public final class Engine {
         let queueSeconds = RuntimeClock.seconds(since: requestStart)
         let preparationSeconds = max(0, control.elapsedSeconds - queueSeconds)
         defer { control.releaseDispatchReservation(); if !gateHeld { lock.unlock() } }
+        if continuing == nil, let policy = shortPromptPrefill, let plan = currentPlan {
+            // The applied chunk is part of the numerical checkpoint key.
+            // A schedule crossover therefore cannot reuse incompatible state.
+            generator.prefillChunk = promptIds.count < policy.limit
+                ? min(policy.chunk, plan.prefillChunk) : plan.prefillChunk
+        }
         var params = params.sanitized()
         // A queued request may acquire the lock before the waiting governor.
         // Refuse it before image encoding, cache checkout or GPU allocation.
@@ -1282,6 +1311,10 @@ public final class Engine {
             return limit.isFinite && limit > 0 && limit < Double(Int.max) / 1e9
                 ? Int(limit * 1e9) : 0
         }
+        // Only the model's own work keeps the GPU awake, never a queue wait.
+        let keepAwake = GPUKeepAlive.keepsAwake(gpuKeepAlive, power: .current)
+        let keepAlive = keepAwake ? GPUKeepAlive.shared : nil
+        keepAlive?.begin()
         var (ids, stats) = generator.generate(
             promptIds: promptIds, params: params, eosIds: eosIds, cache: prefixCache,
             vision: vision,
@@ -1291,6 +1324,8 @@ public final class Engine {
                 return shouldContinue?() ?? true
             }, onToken: tokenHandler, request: control, onAdmitted: onAdmitted,
             continuing: continuing, retaining: retaining)
+        keepAlive?.end()
+        stats.gpuKeptAwake = keepAlive != nil
 
         var text = tokenizer.decode(tokens: ids, skipSpecialTokens: true)
         if !stops.isEmpty, let from = Self.answerStart(text, reasoningOpen: reasoningOpen),

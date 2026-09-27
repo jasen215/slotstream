@@ -171,6 +171,10 @@ check "a continued conversation equals a cold one (prefix-exact-check)" "run_bin
 echo "== prefill sweep: matches the pool path, deterministic, blind to the pool =="
 check "sweep within the prefill-rechunk control, identical cold and warm (sweep-check)" "run_binary sweep-check"
 
+echo "== decode overlap: direct demand reads and the GPU keepalive leave output exact =="
+check "direct reads and keepalive equal the staged path on a cold cache (decode-overlap-check)" "run_binary decode-overlap-check"
+check "streamed draft experts and the plain-decode lookahead leave output exact (draft-stream-check)" "run_binary draft-stream-check"
+
 # The MTP draft head is a separately converted artifact (Tools/mtp_convert.py),
 # not part of `pull` — a fresh install legitimately lacks it, so these SKIP
 # rather than fail when it is absent.

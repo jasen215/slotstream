@@ -62,8 +62,8 @@ func responseDetailsChecks(root: URL, dbmd: URL) async throws {
         var m = ResponseMetrics(); m.answerTokens = tokens; m.answerSeconds = seconds; m.contextTokens = context; m.rounds = 1; m.firstTokenSeconds = 1; return m
     }
     let engine = ScriptedInference(turns: [
-        EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("file-1")]), ProposedTool(name: "source.list", arguments: ["limit": .int(1)])], metrics: exact(30, 3, context: 900)),
-        EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("file-1")])], metrics: exact(20, 2, context: 1000)),
+        EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("a1:notes.md")]), ProposedTool(name: "source.list", arguments: ["limit": .int(1)])], metrics: exact(30, 3, context: 900)),
+        EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("a1:notes.md")])], metrics: exact(20, 2, context: 1000)),
         EngineTurn(text: "The launch is October 12.", metrics: exact(10, 1, context: 1400)),
     ], thinkingTraces: [canary + " first look", canary + " second look", canary + " final look"])
     let home = root.appendingPathComponent("details")

@@ -2,8 +2,9 @@
 // decoder layer that predicts the token AFTER next, used for self-speculative
 // decode. Weights come from `mtp.safetensors` (converted from the official
 // release by Tools/mtp_convert.py — the pinned community conversion drops
-// them), everything resident: its 512 experts are 1.42 GB and stay loaded,
-// so drafting never touches the slot pool or the SSD.
+// them). Resident, its 512 experts are 1.42 GB and stay loaded, so drafting
+// never touches the slot pool or the SSD. On a small cache the plan streams
+// them instead through their own small cache (MTPExpertStream).
 //
 // Semantics follow vLLM's Qwen4ExpMultiTokenPredictor ("scheme A"), the only
 // public inference implementation of this head, cross-checked against the
@@ -31,6 +32,9 @@ import MLXNN
 public final class MTPWeights: TensorSource {
     public let config: ModelConfig
     let arrays: [String: MLXArray]
+    let url: URL
+    /// True when the routed experts were left on disk for a stream.
+    let streamedExperts: Bool
 
     public static func fileURL(modelDir: URL) -> URL {
         modelDir.appendingPathComponent("mtp.safetensors")
@@ -40,16 +44,26 @@ public final class MTPWeights: TensorSource {
         FileManager.default.fileExists(atPath: fileURL(modelDir: modelDir).path)
     }
 
-    public init(modelDir: URL, config: ModelConfig) throws {
+    public convenience init(modelDir: URL, config: ModelConfig) throws {
+        try self.init(modelDir: modelDir, config: config, streamedExperts: false)
+    }
+
+    /// `streamedExperts` leaves the routed experts unread; `MTPExpertStream`
+    /// reads them from the same file on demand.
+    public init(modelDir: URL, config: ModelConfig, streamedExperts: Bool) throws {
         self.config = config
+        self.streamedExperts = streamedExperts
         let url = Self.fileURL(modelDir: modelDir)
+        self.url = url
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw ModelError(
                 "no mtp.safetensors in \(modelDir.path) — the MTP draft head is a separate "
                     + "1.5 GB artifact converted from the official release "
                     + "(Tools/mtp_convert.py); run with --mtp off or convert it first")
         }
-        let all = try loadArrays(url: url)
+        var all = try loadArrays(url: url)
+        // Loading is lazy, so dropping the experts before evaluation never reads them.
+        if streamedExperts { all = all.filter { !$0.key.contains(".switch_mlp.") } }
         eval(Array(all.values))
         self.arrays = all
     }
@@ -73,8 +87,11 @@ final class ResidentMoE {
     let gp: (MLXArray, MLXArray, MLXArray)  // gate_proj weight/scales/biases (E, I, H/8)
     let up: (MLXArray, MLXArray, MLXArray)
     let dp: (MLXArray, MLXArray, MLXArray)
+    /// Set when the experts stream: the triples above are its slot pools and
+    /// routing indices are translated to slots before the gathers.
+    let stream: MTPExpertStream?
 
-    init(_ w: TensorSource, base b: String) {
+    init(_ w: TensorSource, base b: String, stream: MTPExpertStream? = nil) {
         cfg = w.config
         routerProjection = RouterProjection(w.tensor(b + ".gate.weight"))
         sharedGate = w.linear(b + ".shared_expert_gate")
@@ -86,17 +103,37 @@ final class ResidentMoE {
              w.tensor(b + ".switch_mlp.\(name).scales"),
              w.tensor(b + ".switch_mlp.\(name).biases"))
         }
-        gp = triple("gate_proj")
-        up = triple("up_proj")
-        dp = triple("down_proj")
+        self.stream = stream
+        if let stream {
+            gp = (stream.pools[0], stream.pools[1], stream.pools[2])
+            up = (stream.pools[3], stream.pools[4], stream.pools[5])
+            dp = (stream.pools[6], stream.pools[7], stream.pools[8])
+        } else {
+            gp = triple("gate_proj")
+            up = triple("up_proj")
+            dp = triple("down_proj")
+        }
     }
 
     func callAsFunction(_ x: MLXArray) -> MLXArray {
+        do { return try checked(x) } catch { preconditionFailure("draft expert read failed: \(error)") }
+    }
+
+    /// A streamed head reads its routing back on the host and may read
+    /// experts from the SSD, which can fail; a resident head never throws.
+    func checked(_ x: MLXArray) throws -> MLXArray {
         let logits = routerProjection(x)
         let idx = RouterSelection.indices(logits, k: cfg.topK, enabled: specializedRouter)
-        if let routerObserver { routerObserver(idx.asType(.int32).asArray(Int32.self)) }
+        let rhs: MLXArray
+        if let stream {
+            let ids = idx.asType(.int32).asArray(Int32.self)
+            routerObserver?(ids)
+            rhs = MLXArray(try stream.slots(for: ids), idx.shape).asType(.uint32)
+        } else {
+            if let routerObserver { routerObserver(idx.asType(.int32).asArray(Int32.self)) }
+            rhs = idx.asType(.uint32)
+        }
         let weights = softmax(takeAlong(logits, idx, axis: -1), axis: -1, precise: true)
-        let rhs = idx.asType(.uint32)
 
         let xe = x.expandedDimensions(axes: [-2, -3])
         let g = gatherQuantizedMM(
@@ -184,7 +221,14 @@ public final class MTPHead {
     let mixer: GatedResidual
     public let residentBytes: Int
 
-    public init(_ w: MTPWeights) {
+    public convenience init(_ w: MTPWeights) {
+        self.init(w, stream: nil)
+    }
+
+    /// With `stream`, the routed experts stream through it; `w` was then
+    /// loaded without them (`Qwen4ExpModel.enableMTP(modelDir:streamedExperts:)`).
+    init(_ w: MTPWeights, stream: MTPExpertStream?) {
+        precondition((stream != nil) == w.streamedExperts, "draft head weights and expert placement disagree")
         cfg = w.config
         fcEmbedding = w.linear("mtp.fc_embedding")
         fcHidden = w.linear("mtp.fc_hidden")
@@ -199,10 +243,13 @@ public final class MTPHead {
         attnHC = GatedResidual(w, base: "mtp.layers.0.attn_hyper_connection", useCombine: true)
         mlpHC = GatedResidual(w, base: "mtp.layers.0.mlp_hyper_connection", useCombine: true)
         attn = QSAAttention(w, base: "mtp.layers.0.self_attn")
-        moe = ResidentMoE(w, base: "mtp.layers.0.mlp")
+        moe = ResidentMoE(w, base: "mtp.layers.0.mlp", stream: stream)
         mixer = GatedResidual(w, base: "mtp.hyper_connection_mixer", useCombine: false)
-        residentBytes = w.totalBytes
+        residentBytes = w.totalBytes + (stream?.residentBytes ?? 0)
     }
+
+    /// The expert stream when this head streams its experts.
+    package var expertStream: MTPExpertStream? { moe.stream }
 
     /// Stage-dump hook for parity debugging (set by mtp-parity --dump).
     public var debugSink: ((String, MLXArray) -> Void)? = nil {
@@ -217,6 +264,25 @@ public final class MTPHead {
     public func callAsFunction(
         embedded: MLXArray, hiddenMulti: MLXArray, rope: Rope, state: MTPState
     ) -> (sample: MLXArray, multi: MLXArray) {
+        do {
+            return try forward(embedded: embedded, hiddenMulti: hiddenMulti, rope: rope, state: state)
+        } catch { preconditionFailure("draft step failed: \(error)") }
+    }
+
+    /// One draft step that surfaces a streamed head's read failure instead
+    /// of stopping the process.
+    public func callAsFunctionChecked(
+        embedded: MLXArray, hiddenMulti: MLXArray, rope: Rope, state: MTPState
+    ) throws -> (sample: MLXArray, multi: MLXArray) {
+        try forward(embedded: embedded, hiddenMulti: hiddenMulti, rope: rope, state: state)
+    }
+
+    /// `stateOnly` stops after the attention writes its caches: consumption
+    /// keeps only that state, and a streamed head must not route rows whose
+    /// output nothing reads. A resident head's unread MoE was never evaluated.
+    func forward(
+        embedded: MLXArray, hiddenMulti: MLXArray, rope: Rope, state: MTPState, stateOnly: Bool = false
+    ) throws -> (sample: MLXArray, multi: MLXArray) {
         let (B, S) = (embedded.dim(0), embedded.dim(1))
         let e = fcEmbedding(preFcNormEmbedding(embedded))
         var h = preFcNormHidden(hiddenMulti)
@@ -230,12 +296,13 @@ public final class MTPHead {
         debugSink?("x1", x1)
         let attnOut = attn(x1, rope: rope, cache: state.kv, idxCache: state.indexer)
         debugSink?("attnOut", attnOut)
+        if stateOnly { return (x1, h) }
         h = h + (attnOut.expandedDimensions(axis: -2) * inj1!.expandedDimensions(axis: -1))
             .reshaped(h.shape)
 
         let (x2, inj2) = mlpHC(h)
         debugSink?("x2", x2)
-        let moeOut = moe(x2)
+        let moeOut = try moe.checked(x2)
         debugSink?("moeOut", moeOut)
         h = h + (moeOut.expandedDimensions(axis: -2) * inj2!.expandedDimensions(axis: -1))
             .reshaped(h.shape)
@@ -307,7 +374,8 @@ public final class MTPHead {
             } else {
                 multis = chunkMulti[0..., 0 ..< (S - 1), 0...]
             }
-            _ = self(embedded: e, hiddenMulti: multis, rope: rope, state: state)
+            _ = try forward(embedded: e, hiddenMulti: multis, rope: rope, state: state,
+                stateOnly: moe.stream != nil)
             state.materialize()
         }
         return last

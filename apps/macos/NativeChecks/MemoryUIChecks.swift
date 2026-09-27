@@ -22,12 +22,12 @@ import Vision
                 let preferences = custom ? PerformancePreferences(budget: .custom, customGB: 48) : .init()
                 model.performancePreferences = preferences
                 model.snapshot = RuntimeSnapshot(home: .init(), modelStatus: "Ready", error: nil, simulated: true)
-                model.snapshot?.performance = PerformanceSnapshot(preferences: preferences,
+                model.performanceState.snapshot = PerformanceSnapshot(preferences: preferences,
                     pending: custom, state: "In use", loaded: true, busy: true, usedGB: 13,
                     budgetGB: 14.5, recommendationGB: 14.5, maximumGB: overRange ? 37 : 49.5,
                     detail: "Responding on your Mac.", idleMinutes: 10)
                 window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-                let host = NSHostingView(rootView: Form { PerformanceSettings(model: model) }
+                let host = NSHostingView(rootView: Form { PerformanceSettings(model: model, performance: model.performanceState) }
                     .formStyle(.grouped).frame(width: 620, height: 700))
                 window.contentView = host
                 window.orderFront(nil)

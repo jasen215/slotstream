@@ -2,11 +2,20 @@
 type: index
 scope: type-folder
 folder: records/decisions
-updated: 2026-09-22T05:04:53.680440Z
+updated: 2026-09-24T19:17:48.602832Z
 ---
 
 # records/decisions
 
+- [[records/decisions/automatic-context-window-per-machine]] — Auto picks the largest of 32,768, 65,536, 131,072 and 262,144 tokens that keeps speculative decoding, retains one conversation and adds at most 10% to a typical request
+- [[records/decisions/decode-lookahead-default-with-the-draft-head]] — Router-reuse prefetch, FP32 router weights and a four-layer GPU barrier run wherever the draft head does, charged 373 MiB; held out at 1.114 with identical output
+- [[records/decisions/draft-head-auto-floor-76-per-layer]] — Auto enables the draft head when the cache keeps 76 experts per layer after its charge, a 21 GB target, so 32 GB Macs and up; the former floor was 120
+- [[records/decisions/decode-lookahead-in-plain-decode]] — Without the draft head the qualified decode lookahead runs in plain decode from 20 experts per layer before its charge: 1.11x at 10 GB and 1.05x at 16 GB, landed 1.05x to 1.08x under paging
+- [[records/decisions/draft-head-streams-its-experts-below-76-per-layer]] — Below 76 experts per layer after the resident charge the draft head's 512 experts stream through a 64-expert cache charged 0.4 GB, and auto enables the head from 28, a 12 GB target: 1.23x there
+- [[records/decisions/direct-demand-reads-default]] — Cache misses are read into host scratch and copied straight into their pool slots, without staging arrays or a GPU scatter: 1.16x alone at 10 GB, identical output
+- [[records/decisions/gpu-keepalive-on-ac-power]] — A one-thread spin kernel keeps the GPU awake while a request generates, on AC power outside Low Power Mode by default: 1.22x with direct reads at 22 GB, energy per token +7%
+- [[records/decisions/sevra-live-folder-navigation]] — Live folder access with bounded navigation, reliable search cursors and fresh-read edit checks
+- [[records/decisions/sevra-app-speed-defaults-2026-09-23]] — Enable qualified desktop speedups without extra user switches
 - [[records/decisions/automatic-prefill-read-policy]] — Apply supported prefill improvements automatically
 - [[records/decisions/automatic-mtp-prefill-read-policy]] — Apply MTP prefill improvements automatically
 - [[records/decisions/qualified-upstream-fused-prefill]] — Adopt qualified upstream fused prefill on the measured M5 Pro profile
@@ -15,7 +24,6 @@ updated: 2026-09-22T05:04:53.680440Z
 - [[records/decisions/kernel-upgrade-fidelity-and-cache-equivalence]] — Separate kernel-upgrade fidelity from warm/cold cache equivalence
 - [[records/decisions/coverage-as-review-feedback]] — Coverage as review feedback
 - [[records/decisions/adaptive-memory-limits]] — Custom process ceilings remain adaptive above the automatic default; hardware headroom, diagnostics and startup agree.
-- [[records/decisions/automatic-context-window-per-machine]] — Auto picks the largest of 32,768, 65,536, 131,072 and 262,144 tokens that keeps speculative decoding, retains one conversation and adds at most 10% to a typical request
 - [[records/decisions/automatic-context-preserves-unmeasured-cache]] — Automatic context preserves cache whose loss is unmeasured
 - [[records/decisions/a-continued-conversation-computes-what-a-cold-one-computes]] — A turn resumes only its own prefill pass boundaries, so a continued conversation is exact against a cold read, at one partial pass per turn
 - [[records/decisions/verify-pass-split-attention-default]] — The speculative verify pass splits its attention from 6,144 tokens by default; the exact mode stays opt-in
@@ -23,10 +31,8 @@ updated: 2026-09-22T05:04:53.680440Z
 - [[records/decisions/native-stack-stated-on-every-surface]] — Public surfaces state the native Swift/MLX/Metal stack as design; speed stays attributed to measured mechanisms
 - [[records/decisions/target-range-macs-that-cannot-hold-the-model]] — Slotstream is built for Macs that cannot hold the model, 16 to 64 GB; 96 GB and larger Macs run it but are not the optimization target
 - [[records/decisions/corrected-decode-forecast-default-with-the-sidecar]] — The lookahead forecasts from the previous layer's attention output with a rank-128 correction shipped as a pinned sidecar; 1.111 over the previous configuration, identical output, 409 MiB
-- [[records/decisions/draft-head-auto-floor-76-per-layer]] — Auto enables the draft head when the cache keeps 76 experts per layer after its charge, a 21 GB target, so 32 GB Macs and up; the former floor was 120
 - [[records/decisions/draft-depth-defaults-to-one-and-auto-floor-120-per-layer]] — Speculative decode drafts one token by default and auto enables it only at 120 experts per layer and up
 - [[records/decisions/draft-depth-defaults-to-two]] — Two draft tokens are the adopted operating default; activation and memory policies remain separate
-- [[records/decisions/decode-lookahead-default-with-the-draft-head]] — Router-reuse prefetch, FP32 router weights and a four-layer GPU barrier run wherever the draft head does, charged 373 MiB; held out at 1.114 with identical output
 - [[records/decisions/decode-host-time-is-waiting-not-graph-construction]] — Decode host time is waiting on the GPU and on reads, not graph construction: no layer compilation and no host point fixes
 - [[records/decisions/residency-speculation-waits-for-layer-completeness]] — Residency speculation waits: only 2.2% to 2.5% of layer events are fully resident, too few to pay for rollback machinery
 - [[records/decisions/clock-stays-the-eviction-policy]] — CLOCK stays the eviction policy: measured against LRU and LFU on a real trace

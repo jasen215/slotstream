@@ -102,6 +102,10 @@ public struct MemoryPlan {
     /// Whether the MTP draft head loads (self-speculative decode). Charged as
     /// a fixed resident block; the pool is sized from what remains.
     public let mtpEnabled: Bool
+    /// Whether the draft head's routed experts stream through a small cache
+    /// instead of staying resident, which charges `Planner.mtpStreamedGB`
+    /// instead of `Planner.mtpResidentGB`. Only meaningful with `mtpEnabled`.
+    public let mtpStreamedExperts: Bool
     /// Whether an image request may load the tower in this process.
     public let visionEnabled: Bool
     /// A loaded tower is charged inside the total-process target. Merely
@@ -166,6 +170,33 @@ public struct MemoryPlan {
         lookaheadReserveBytes: Int = 0, decodeLookahead: Bool = false,
         memoryLimitGB: Double?
     ) {
+        self.init(source: source, slots: slots, targetGB: targetGB,
+            ramGB: ramGB, workingSetGB: workingSetGB, ramPercent: ramPercent,
+            availableGB: availableGB, clamped: clamped, prefillChunk: prefillChunk,
+            prefixCacheTokens: prefixCacheTokens, mtpEnabled: mtpEnabled, visionEnabled: visionEnabled,
+            visionResidentReserved: visionResidentReserved, maxContextTokens: maxContextTokens, notes: notes,
+            simulated: simulated, runtimeAllocationPolicy: runtimeAllocationPolicy, maxPrefillWaitMinutes: maxPrefillWaitMinutes,
+            contextQualification: contextQualification, lookaheadReserveBytes: lookaheadReserveBytes, decodeLookahead: decodeLookahead,
+            memoryLimitGB: memoryLimitGB, mtpStreamedExperts: false)
+    }
+
+    /// `mtpStreamedExperts` places the draft head's routed experts in a small
+    /// streamed cache instead of keeping them resident.
+    public init(
+        source: Source, slots: Int, targetGB: Double?,
+        ramGB: Double, workingSetGB: Double, ramPercent: Double,
+        availableGB: Double?, clamped: Bool,
+        prefillChunk: Int, prefixCacheTokens: Int, mtpEnabled: Bool = false,
+        visionEnabled: Bool = false,
+        visionResidentReserved: Bool = false,
+        maxContextTokens: Int = ContextPolicy.defaultTokens,
+        notes: [String], simulated: Bool = false,
+        runtimeAllocationPolicy: RuntimeAllocationPolicy? = nil,
+        maxPrefillWaitMinutes: Double = 30, contextQualification: Bool = false,
+        lookaheadReserveBytes: Int = 0, decodeLookahead: Bool = false,
+        memoryLimitGB: Double?, mtpStreamedExperts: Bool
+    ) {
+        self.mtpStreamedExperts = mtpEnabled && mtpStreamedExperts
         self.lookaheadReserveBytes = max(0, lookaheadReserveBytes)
         self.decodeLookahead = decodeLookahead
         self.source = source
@@ -194,8 +225,8 @@ public struct MemoryPlan {
     public var poolGB: Double { Geometry.gb(slots) }
     public var memoryLedger: ContextMemoryLedger {
         ContextMemoryLedger(slots: slots, context: maxContextTokens, chunk: prefillChunk,
-            retentionTokens: prefixCacheTokens, mtp: mtpEnabled, visionResident: visionResidentReserved,
-            lookaheadReserveBytes: lookaheadReserveBytes)
+            retentionTokens: prefixCacheTokens, mtp: mtpEnabled, mtpStreamedExperts: mtpStreamedExperts,
+            visionResident: visionResidentReserved, lookaheadReserveBytes: lookaheadReserveBytes)
     }
     public var expectedPeakGB: Double { Double(memoryLedger.expectedPeakBytes) / 1e9 }
     /// Remaining planned budget, not currently available physical memory. The
@@ -216,7 +247,7 @@ public struct MemoryPlan {
             maxPrefillWaitMinutes: configuration.maxPrefillWaitMinutes,
             contextQualification: configuration.qualification,
             lookaheadReserveBytes: lookaheadReserveBytes, decodeLookahead: decodeLookahead,
-            memoryLimitGB: memoryLimitGB)
+            memoryLimitGB: memoryLimitGB, mtpStreamedExperts: mtpStreamedExperts)
     }
     /// Seconds a prompt filling the whole context takes before its first
     /// token, priced through the prefill schedule this plan runs.
@@ -282,9 +313,11 @@ public struct MemoryPlan {
             prefillChunk, Planner.estPrefillTokS(chunk: prefillChunk),
             Planner.prefillCostGB(prefillChunk)))
         if mtpEnabled {
-            l.append(String(
-                format: "  mtp:    draft head on — speculative decode (%.1f GB resident, charged above)",
-                Planner.mtpResidentGB))
+            l.append(mtpStreamedExperts
+                ? String(format: "  mtp:    draft head on — speculative decode; its experts stream through a %d-expert cache (%.1f GB resident, charged above)",
+                    PlannerCostModel.mtpStreamSlots, Planner.mtpStreamedGB)
+                : String(format: "  mtp:    draft head on — speculative decode (%.1f GB resident, charged above)",
+                    Planner.mtpResidentGB))
         }
         if visionEnabled {
             l.append(visionResidentReserved
@@ -309,7 +342,8 @@ public struct MemoryPlan {
                 Planner.prefixCacheCostGB(tokens: prefixCacheTokens)))
         }
         if decodeLookahead {
-            l.append(String(format: "  lookahead: on, expert prefetch with the draft head, router cache and a GPU barrier every %d layers (%.0f MiB, charged above)",
+            l.append(String(format: "  lookahead: on, expert prefetch %@, router cache and a GPU barrier every %d layers (%.0f MiB, charged above)",
+                mtpEnabled ? "with the draft head" : "in plain decode",
                 DecodeLookahead.barrierLayers, Double(lookaheadReserveBytes) / Double(1 << 20)))
         } else if lookaheadReserveBytes > 0 {
             l.append(String(format: "  lookahead: %.0f MiB reserved for experimental expert prefetch (charged above)",
@@ -345,6 +379,7 @@ public struct MemoryPlan {
             "prefill_chunk": prefillChunk,
             "prefix_cache_max_tokens": prefixCacheTokens,
             "mtp": mtpEnabled,
+            "mtp_streamed_experts": mtpStreamedExperts,
             "vision": visionEnabled,
             "vision_resident_reserved": visionResidentReserved,
             "vision_charged_gb": visionResidentReserved ? Planner.visionResidentGB : 0,
@@ -397,7 +432,7 @@ extension MemoryPlan {
             simulated: simulated, runtimeAllocationPolicy: runtimeAllocationPolicy,
             maxPrefillWaitMinutes: maxPrefillWaitMinutes, contextQualification: contextQualification,
             lookaheadReserveBytes: lookaheadReserveBytes, decodeLookahead: decodeLookahead,
-            memoryLimitGB: memoryLimitGB)
+            memoryLimitGB: memoryLimitGB, mtpStreamedExperts: mtpStreamedExperts)
     }
 }
 
@@ -435,7 +470,7 @@ public enum Planner {
             simulated: p.simulated, runtimeAllocationPolicy: policy,
             maxPrefillWaitMinutes: p.maxPrefillWaitMinutes, contextQualification: p.contextQualification,
             lookaheadReserveBytes: p.lookaheadReserveBytes, decodeLookahead: p.decodeLookahead,
-            memoryLimitGB: p.memoryLimitGB)
+            memoryLimitGB: p.memoryLimitGB, mtpStreamedExperts: p.mtpStreamedExperts)
     }
 
     /// Non-pool footprint: resident weights, the 256 MB n-gram payload plus
@@ -762,6 +797,10 @@ public enum Planner {
     /// Resident cost of the MTP draft head (mtp.safetensors is 1.47 GB;
     /// activations and cache growth ride the existing margins).
     public static let mtpResidentGB = Double(PlannerCostModel.mtpResidentBytes) / 1e9
+    /// The head's cost when its 512 routed experts (1.42 GB of the file)
+    /// stream through a 64-expert cache instead: the rest of the head, that
+    /// cache and one row of read scratch, with the same allowance.
+    public static let mtpStreamedGB = Double(PlannerCostModel.mtpStreamedBytes) / 1e9
 
     /// The vision tower's resident cost, paid only by a process that is handed
     /// an image: 333 bf16 tensors, 0.898 GB, measured from the pinned
@@ -777,16 +816,28 @@ public enum Planner {
     /// Attention transients depend on the actual dispatch: the established
     /// 72-wide fallback can form an N² matrix and are not bounded by this term.
     public static let visionLoadMarginGB = Double(PlannerCostModel.visionLoadMarginBytes) / 1e9
-    /// Auto enables the draft head only when the cache still affords this
-    /// many experts per layer AFTER paying for it. The former 120 came from the
-    /// M9 ladder, measured before rejected drafts rolled back instead of
-    /// re-running. Since then two drafts decoded 31.7% faster than plain decode
-    /// at 76 experts per layer (automatic 40% RAM study on 0.2.14, small
-    /// samples), and the decode lookahead riding the head measured 1.114 at 88.
-    /// The floor is the smallest cache where the head was measured faster.
-    /// Revision: a clean paired loss between this floor and 120.
+    /// Where the draft head keeps its experts resident: a cache that still
+    /// affords this many experts per layer after the resident 1.6 GB charge.
+    /// It was the head's automatic floor until the head could stream them:
+    /// two drafts decoded 31.7% faster than plain decode at 76 (0.2.14), and
+    /// at 22 GB, about 77 here, streamed and resident heads decoded alike.
+    /// Below it the head streams its experts and the cache keeps 1.2 GB more.
     /// db/records/decisions/draft-head-auto-floor-76-per-layer.md
-    public static let mtpAutoFloorPerLayer = 76.0
+    public static let mtpResidentFloorPerLayer = 76.0
+
+    /// Auto enables the draft head only when the cache still affords this
+    /// many experts per layer after paying for it, the smallest cache where the
+    /// head was measured faster than plain decode with the lookahead: 28.4 at
+    /// a 12 GB target with streamed experts, 1.23x. At 17.4, a 10 GB target,
+    /// the two tied. Revision: a clean paired loss between this floor and 76.
+    /// db/records/decisions/draft-head-streams-its-experts-below-76-per-layer.md
+    public static let mtpAutoFloorPerLayer = 28.0
+
+    /// Without the draft head, the decode lookahead runs when the cache before
+    /// its charge affords this many experts per layer: the smallest measured
+    /// gain, 1.11x at a 10 GB target with 20.0 per layer.
+    /// db/records/decisions/decode-lookahead-in-plain-decode.md
+    public static let plainLookaheadFloorPerLayer = 20.0
 
     /// Pool budget before the prefill pass takes its share.
     public static func poolBudgetGB(_ targetGB: Double) -> Double {
@@ -811,6 +862,24 @@ public enum Planner {
     /// quiet machine the clamp never binds and auto stays deterministic.
     public enum MTPMode: String, Sendable, Codable {
         case on, off, auto
+    }
+
+    /// Where the draft head keeps its 512 routed experts. `automatic` keeps
+    /// them resident on a cache of `mtpResidentFloorPerLayer` or more after
+    /// the resident charge and streams them below it. The other two force one
+    /// placement: a loaded engine's re-plans retain its own, and
+    /// `SLOTSTREAM_MTP_EXPERTS` selects one for comparisons.
+    public enum MTPExpertPlacement: String, Sendable, Codable {
+        case automatic, resident, streamed
+
+        /// `SLOTSTREAM_MTP_EXPERTS`, `automatic` when unset.
+        public static func environment(_ env: [String: String] = ProcessInfo.processInfo.environment) throws -> Self {
+            guard let raw = env["SLOTSTREAM_MTP_EXPERTS"] else { return .automatic }
+            guard let placement = Self(rawValue: raw) else {
+                throw PlanError("SLOTSTREAM_MTP_EXPERTS must be automatic, resident or streamed (got \(raw))")
+            }
+            return placement
+        }
     }
 
     /// Whether this process will answer requests that carry images. `auto` is
@@ -925,7 +994,7 @@ public enum Planner {
             mtpAvailable: mtpAvailable, vision: vision, visionAvailable: visionAvailable,
             visionResidentReserved: visionResidentReserved, maxContextTokens: maxContextTokens, simulated: simulated,
             qualification: qualification, runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead,
-            retention: retention)
+            retention: retention, mtpExperts: .automatic)
     }
 
     public static func plan(
@@ -940,13 +1009,37 @@ public enum Planner {
         decodeLookahead: DecodeLookaheadPlanning = .automatic,
         retention: ContextRetention = .automatic
     ) throws -> MemoryPlan {
+        try plan(
+            expertsPerLayer: expertsPerLayer, poolGB: poolGB, memoryGB: memoryGB,
+            memoryLimitGB: memoryLimitGB, ramGB: ramGB, workingSetGB: workingSetGB,
+            availableGB: availableGB, ramPercent: ramPercent, mtp: mtp,
+            mtpAvailable: mtpAvailable, vision: vision, visionAvailable: visionAvailable,
+            visionResidentReserved: visionResidentReserved, maxContextTokens: maxContextTokens, simulated: simulated,
+            qualification: qualification, runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead,
+            retention: retention, mtpExperts: .automatic)
+    }
+
+    /// `mtpExperts` forces where the draft head's routed experts live;
+    /// `.automatic` keeps them resident when the cache allows it.
+    public static func plan(
+        expertsPerLayer: Int?, poolGB: Double?, memoryGB: Double?, memoryLimitGB: Double? = nil,
+        ramGB: Double? = nil, workingSetGB: Double? = nil,
+        availableGB: Double? = nil, ramPercent: Double? = nil,
+        mtp: MTPMode = .off, mtpAvailable: Bool = false,
+        vision: VisionMode = .auto, visionAvailable: Bool = false,
+        visionResidentReserved: Bool = false,
+        maxContextTokens: Int = ContextPolicy.defaultTokens,
+        simulated: Bool = false, qualification: Bool, runtimePolicy: RuntimeAllocationPolicy? = nil,
+        decodeLookahead: DecodeLookaheadPlanning = .automatic,
+        retention: ContextRetention = .automatic, mtpExperts: MTPExpertPlacement
+    ) throws -> MemoryPlan {
         func resolve(_ floor: Int) throws -> MemoryPlan {
             try resolvePlan(expertsPerLayer: expertsPerLayer, poolGB: poolGB, memoryGB: memoryGB, memoryLimitGB: memoryLimitGB,
                 ramGB: ramGB, workingSetGB: workingSetGB, availableGB: availableGB, ramPercent: ramPercent,
                 mtp: mtp, mtpAvailable: mtpAvailable, vision: vision, visionAvailable: visionAvailable,
                 visionResidentReserved: visionResidentReserved, maxContextTokens: maxContextTokens,
                 simulated: simulated, qualification: qualification, runtimePolicy: runtimePolicy,
-                decodeLookahead: decodeLookahead, retentionFloor: floor)
+                decodeLookahead: decodeLookahead, mtpExperts: mtpExperts, retentionFloor: floor)
         }
         guard retention != .budgetShare, maxContextTokens > ContextPolicy.defaultTokens,
               ContextPolicy.validationError(maxContextTokens, qualification: qualification) == nil else {
@@ -973,7 +1066,7 @@ public enum Planner {
         visionResidentReserved: Bool,
         maxContextTokens: Int,
         simulated: Bool, qualification: Bool, runtimePolicy: RuntimeAllocationPolicy?,
-        decodeLookahead: DecodeLookaheadPlanning, retentionFloor: Int
+        decodeLookahead: DecodeLookaheadPlanning, mtpExperts: MTPExpertPlacement = .automatic, retentionFloor: Int
     ) throws -> MemoryPlan {
         if let why = ContextPolicy.validationError(maxContextTokens, qualification: qualification) { throw PlanError(why) }
         // nil: decide automatically below. A fixed reservation (experimental, or
@@ -1002,7 +1095,9 @@ public enum Planner {
             + Double(fixedLookaheadBytes) / 1e9
         let mtpContextCharge = extraContextMemoryGB(maxContextTokens: maxContextTokens, mtp: true)
             - extraContextMemoryGB(maxContextTokens: maxContextTokens)
-        let mtpTotalCharge = mtpResidentGB + mtpContextCharge
+        let mtpResidentCharge = mtpResidentGB + mtpContextCharge
+        let mtpStreamedCharge = mtpStreamedGB + mtpContextCharge
+        func mtpCharge(streamed: Bool) -> Double { streamed ? mtpStreamedCharge : mtpResidentCharge }
         // Auto lifts its model ceiling by a larger window's own memory, as it
         // does for the draft head: the window's active state and transient
         // reserve, plus the retention that keeps one complete conversation.
@@ -1071,24 +1166,37 @@ public enum Planner {
         if mtp == .auto, maxContextTokens > ContextPolicy.mtpLimit {
             notes.append("MTP stays off because this context exceeds its qualified window")
         }
-        func resolveMTP(slotsAfterCharge: Int) -> Bool {
+        /// Whether the head streams its experts, given the cache a resident
+        /// head would leave. A forced placement wins.
+        func streamsExperts(slotsAfterResident: Int) -> Bool {
+            switch mtpExperts {
+            case .resident: return false
+            case .streamed: return true
+            case .automatic: return Geometry.perLayer(slotsAfterResident) < mtpResidentFloorPerLayer
+            }
+        }
+        /// The floor a head of this placement must leave: resident heads keep
+        /// the resident floor they were measured at, streamed heads the lower one.
+        func headFloor(streamed: Bool) -> Double { streamed ? mtpAutoFloorPerLayer : mtpResidentFloorPerLayer }
+        func resolveMTP(slotsAfterCharge: Int, streamed: Bool) -> Bool {
             if mtp == .auto, maxContextTokens > ContextPolicy.mtpLimit { return false }
             switch mtp {
             case .off: return false
             case .on: return true
             case .auto:
                 return mtpAvailable
-                    && Geometry.perLayer(slotsAfterCharge) >= mtpAutoFloorPerLayer
+                    && Geometry.perLayer(slotsAfterCharge) >= headFloor(streamed: streamed)
             }
         }
-        /// The decode lookahead rides the draft head. Automatically it turns on
-        /// where the cache after the head's charge still reaches the head's
-        /// floor, the cache sizes it was measured at; a head forced onto a
-        /// smaller cache runs without it. Its own bytes then come out of the pool.
-        func resolveLookahead(mtpOn: Bool, slotsAfterHead: Int) -> Bool {
-            guard mtpOn else { return false }
+        /// With the draft head, the decode lookahead rides it where the cache
+        /// after the head's charge still reaches the head's floor, the cache
+        /// sizes it was measured at; a head forced onto a smaller cache runs
+        /// without it. Without the head it runs in plain decode from its own
+        /// floor. Its bytes then come out of the pool.
+        func resolveLookahead(mtpOn: Bool, streamed: Bool, slotsAfterHead: Int) -> Bool {
             if let retainedLookahead { return retainedLookahead }
-            return Geometry.perLayer(slotsAfterHead) >= mtpAutoFloorPerLayer
+            return Geometry.perLayer(slotsAfterHead)
+                >= (mtpOn ? headFloor(streamed: streamed) : plainLookaheadFloorPerLayer)
         }
         /// Budget the automatic lookahead takes when it is on.
         func lookaheadChargeGB(_ on: Bool) -> Double {
@@ -1096,11 +1204,11 @@ public enum Planner {
         }
 
         func finish(
-            _ source: MemoryPlan.Source, _ slots: Int, target: Double?, mtpOn: Bool, lookaheadOn: Bool
+            _ source: MemoryPlan.Source, _ slots: Int, target: Double?, mtpOn: Bool, mtpStreamed: Bool, lookaheadOn: Bool
         ) throws -> MemoryPlan {
             // An explicit pool knob states the cache size, not the whole budget,
             // so size the prefill pass from the pool the user asked for.
-            let mtpCharge = (mtpOn ? mtpResidentGB + mtpContextCharge : 0) + lookaheadChargeGB(lookaheadOn)
+            let mtpCharge = (mtpOn ? mtpCharge(streamed: mtpStreamed) : 0) + lookaheadChargeGB(lookaheadOn)
             let budgetForCaches = target.map { poolBudgetGB($0) - mtpCharge - contextCharge }
                 ?? Geometry.gb(slots)
             let chunk = prefillChunkFor(poolBudgetGB: budgetForCaches, contextCap: maxContextTokens, retentionFloor: retentionFloor)
@@ -1139,7 +1247,7 @@ public enum Planner {
                 simulated: simulated, contextQualification: qualification,
                 lookaheadReserveBytes: fixedLookaheadBytes
                     + (lookaheadOn && retainedLookahead == nil ? DecodeLookahead.reserveBytes(correctionBytes: automaticCorrectionBytes) : 0),
-                decodeLookahead: lookaheadOn, memoryLimitGB: memoryLimitGB)
+                decodeLookahead: lookaheadOn, memoryLimitGB: memoryLimitGB, mtpStreamedExperts: mtpOn && mtpStreamed)
             let resolved = try runtimePolicy.map { try applyingRuntimePolicy(base, policy: $0) } ?? base
             let bytes = resolved.memoryLedger.expectedPeakBytes
             if memoryLimitGB != nil {
@@ -1162,9 +1270,10 @@ public enum Planner {
             if poolGB != nil { notes.append("--pool-gb ignored (--experts-per-layer takes precedence)") }
             if memoryGB != nil { notes.append("--memory-gb ignored (--experts-per-layer takes precedence)") }
             let slots = min(n, Geometry.expertsPerLayer) * Geometry.layers
-            let mtpOn = resolveMTP(slotsAfterCharge: slots)
-            return try finish(.expertsPerLayer, slots, target: nil, mtpOn: mtpOn,
-                lookaheadOn: resolveLookahead(mtpOn: mtpOn, slotsAfterHead: slots))
+            let streamed = streamsExperts(slotsAfterResident: slots)
+            let mtpOn = resolveMTP(slotsAfterCharge: slots, streamed: streamed)
+            return try finish(.expertsPerLayer, slots, target: nil, mtpOn: mtpOn, mtpStreamed: streamed,
+                lookaheadOn: resolveLookahead(mtpOn: mtpOn, streamed: streamed, slotsAfterHead: slots))
         }
         if let g = poolGB {
             guard g.isFinite, g > 0 else {
@@ -1175,9 +1284,10 @@ public enum Planner {
             // raised it; cap before Double->Int so huge finite input is safe.
             let requested = g >= Geometry.gb(Geometry.totalRecords)
                 ? Geometry.totalRecords : Int(g * 1e9 / Geometry.recordBytes)
-            let mtpOn = resolveMTP(slotsAfterCharge: requested)
-            return try finish(.poolGB, requested, target: nil, mtpOn: mtpOn,
-                lookaheadOn: resolveLookahead(mtpOn: mtpOn, slotsAfterHead: requested))
+            let streamed = streamsExperts(slotsAfterResident: requested)
+            let mtpOn = resolveMTP(slotsAfterCharge: requested, streamed: streamed)
+            return try finish(.poolGB, requested, target: nil, mtpOn: mtpOn, mtpStreamed: streamed,
+                lookaheadOn: resolveLookahead(mtpOn: mtpOn, streamed: streamed, slotsAfterHead: requested))
         }
         if let m = memoryGB {
             guard m.isFinite else { throw PlanError("--memory-gb must be finite") }
@@ -1198,28 +1308,33 @@ public enum Planner {
                     format: "only %.1f GB is reclaimable right now — expect paging until other apps release memory",
                     a))
             }
-            var mtpOn = resolveMTP(
-                slotsAfterCharge: slotsForTarget(max(m - mtpTotalCharge - contextCharge, minMemoryGB), contextCap: maxContextTokens, retentionFloor: retentionFloor))
-            if mtpOn, m - mtpTotalCharge - contextCharge < minMemoryGB {
+            func slotsAfter(_ charge: Double) -> Int {
+                slotsForTarget(max(m - charge - contextCharge, minMemoryGB), contextCap: maxContextTokens, retentionFloor: retentionFloor)
+            }
+            let streamed = streamsExperts(slotsAfterResident: slotsAfter(mtpResidentCharge))
+            let headCharge = mtpCharge(streamed: streamed)
+            var mtpOn = resolveMTP(slotsAfterCharge: slotsAfter(headCharge), streamed: streamed)
+            if mtpOn, m - headCharge - contextCharge < minMemoryGB {
                 if mtp == .on {
                     throw PlanError(String(
                         format: "--memory-gb %.1f cannot fit the %.1f GB draft head above the %.1f GB minimum — raise the target or drop --mtp on",
-                        m, mtpTotalCharge, minMemoryGB))
+                        m, headCharge, minMemoryGB))
                 }
                 mtpOn = false
             }
-            let slotsAfterHead = slotsForTarget(m - (mtpOn ? mtpTotalCharge : 0) - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
-            let lookaheadOn = resolveLookahead(mtpOn: mtpOn, slotsAfterHead: slotsAfterHead)
+            let charged = mtpOn ? headCharge : 0
+            let slotsAfterHead = slotsForTarget(m - charged - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
+            let lookaheadOn = resolveLookahead(mtpOn: mtpOn, streamed: streamed, slotsAfterHead: slotsAfterHead)
             let slots = lookaheadOn && retainedLookahead == nil
-                ? slotsForTarget(m - mtpTotalCharge - lookaheadChargeGB(true) - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
+                ? slotsForTarget(m - charged - lookaheadChargeGB(true) - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
                 : slotsAfterHead
-            return try finish(.memoryGB, slots, target: m, mtpOn: mtpOn, lookaheadOn: lookaheadOn)
+            return try finish(.memoryGB, slots, target: m, mtpOn: mtpOn, mtpStreamed: streamed, lookaheadOn: lookaheadOn)
         }
 
-        // auto: the default. The draft head is worth its 1.6 GB only when the
-        // cache still reaches ~120+ experts/layer after paying for it in the
-        // measured setup. Preserve that cache budget when the head is enabled
-        // by raising the policy ceiling by its separately charged cost.
+        // auto: the default. The draft head is worth its charge only when the
+        // cache still reaches its floor after paying for it in the measured
+        // setup. Preserve that cache budget when the head is enabled by
+        // raising the policy ceiling by its separately charged cost.
         let mtpWanted = mtp != .off && mtpAvailable
             && (mtp == .on || maxContextTokens <= ContextPolicy.mtpLimit)
         func autoRaw(ceilingGB: Double) -> (Double, Bool) {
@@ -1237,21 +1352,30 @@ public enum Planner {
             return (raw, didClamp)
         }
         var mtpOn = false
+        var streamed = false
         if mtpWanted {
-            let (rawM, _) = autoRaw(ceilingGB: usefulCeilingGB + mtpTotalCharge + windowChargeGB)
-            let targetM = max(minMemoryGB, rawM)
-            let charged = targetM - mtpTotalCharge - contextCharge
-            mtpOn = charged >= minMemoryGB
-                && (mtp == .on
-                    || Geometry.perLayer(slotsForTarget(charged, contextCap: maxContextTokens, retentionFloor: retentionFloor)) >= mtpAutoFloorPerLayer)
+            // The ceiling rises by the head's own charge, so a resident head is
+            // priced first; a cache it leaves below the resident floor streams
+            // the experts instead and is priced again with the smaller charge.
+            func affords(_ charge: Double) -> (charged: Double, slots: Int) {
+                let (rawM, _) = autoRaw(ceilingGB: usefulCeilingGB + charge + windowChargeGB)
+                let charged = max(minMemoryGB, rawM) - charge - contextCharge
+                return (charged, slotsForTarget(charged, contextCap: maxContextTokens, retentionFloor: retentionFloor))
+            }
+            let resident = affords(mtpResidentCharge)
+            streamed = streamsExperts(slotsAfterResident: resident.slots)
+            let head = streamed ? affords(mtpStreamedCharge) : resident
+            mtpOn = head.charged >= minMemoryGB
+                && (mtp == .on || Geometry.perLayer(head.slots) >= headFloor(streamed: streamed))
         }
+        let headCharge = mtpCharge(streamed: streamed)
         if mtp == .on, !mtpOn {
             throw PlanError("insufficient_memory: auto cannot keep the requested MTP head loaded at this context; close other apps or use --mtp off")
         }
         // `ceiling` is what this machine's auto would pick unclamped (the
         // notes below compare against it); the knee itself rises by the
         // head's cost when the head is on.
-        let kneeGB = memoryLimitGB ?? (usefulCeilingGB + (mtpOn ? mtpTotalCharge : 0) + windowChargeGB)
+        let kneeGB = memoryLimitGB ?? (usefulCeilingGB + (mtpOn ? headCharge : 0) + windowChargeGB)
         var ceiling = autoTargetGB(
             ramGB: ram, workingSetGB: ws, ramPercent: pct, ceilingGB: kneeGB)
         if memoryLimitGB != nil {
@@ -1263,7 +1387,7 @@ public enum Planner {
         if memoryLimitGB != nil, raw < minMemoryGB {
             throw PlanError("insufficient_memory: available memory cannot fit the minimum model budget with safety headroom")
         }
-        if mtpOn, target - mtpTotalCharge - contextCharge < minMemoryGB { mtpOn = false }
+        if mtpOn, target - headCharge - contextCharge < minMemoryGB { mtpOn = false }
         // Exactly one note tells the story of why the target is what it is.
         if raw < minMemoryGB, ceiling < minMemoryGB {
             notes.append(String(
@@ -1296,12 +1420,13 @@ public enum Planner {
                 windowChargeGB > 0
                     ? String(format: " plus %.1f GB for the %d-token context window", windowChargeGB, maxContextTokens) : ""))
         }
-        let slotsAfterHead = slotsForTarget(target - (mtpOn ? mtpTotalCharge : 0) - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
-        let lookaheadOn = resolveLookahead(mtpOn: mtpOn, slotsAfterHead: slotsAfterHead)
+        let charged = mtpOn ? headCharge : 0
+        let slotsAfterHead = slotsForTarget(target - charged - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
+        let lookaheadOn = resolveLookahead(mtpOn: mtpOn, streamed: streamed, slotsAfterHead: slotsAfterHead)
         let slots = lookaheadOn && retainedLookahead == nil
-            ? slotsForTarget(target - mtpTotalCharge - lookaheadChargeGB(true) - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
+            ? slotsForTarget(target - charged - lookaheadChargeGB(true) - contextCharge, contextCap: maxContextTokens, retentionFloor: retentionFloor)
             : slotsAfterHead
-        return try finish(.auto, slots, target: target, mtpOn: mtpOn, lookaheadOn: lookaheadOn)
+        return try finish(.auto, slots, target: target, mtpOn: mtpOn, mtpStreamed: streamed, lookaheadOn: lookaheadOn)
     }
 
     /// Resolve the first image against the existing policy, before allocating
@@ -1319,7 +1444,8 @@ public enum Planner {
                 vision: .on, visionAvailable: true, visionResidentReserved: true,
                 maxContextTokens: p.maxContextTokens, simulated: p.simulated, qualification: p.contextQualification,
                 runtimePolicy: p.runtimeAllocationPolicy,
-                decodeLookahead: .retained(enabled: p.decodeLookahead, bytes: p.lookaheadReserveBytes))
+                decodeLookahead: .retained(enabled: p.decodeLookahead, bytes: p.lookaheadReserveBytes),
+                mtpExperts: p.mtpStreamedExperts ? .streamed : .resident)
             // A plan that retained one complete conversation falls back to the
             // budget share when the tower leaves no room for all of it. The
             // pool cannot grow back here, so the memory that fallback frees
@@ -1340,7 +1466,7 @@ public enum Planner {
                         maxContextTokens: p.maxContextTokens, simulated: p.simulated,
                         qualification: p.contextQualification, runtimePolicy: p.runtimeAllocationPolicy,
                         decodeLookahead: .retained(enabled: p.decodeLookahead, bytes: p.lookaheadReserveBytes),
-                        retentionFloor: floor),
+                        mtpExperts: p.mtpStreamedExperts ? .streamed : .resident, retentionFloor: floor),
                         candidate.slots >= slots, candidate.prefillChunk >= chunk
                     else { return nil }
                     return candidate
@@ -1371,6 +1497,6 @@ public enum Planner {
             runtimeAllocationPolicy: p.runtimeAllocationPolicy,
             maxPrefillWaitMinutes: p.maxPrefillWaitMinutes, contextQualification: p.contextQualification,
             lookaheadReserveBytes: p.lookaheadReserveBytes, decodeLookahead: p.decodeLookahead,
-            memoryLimitGB: p.memoryLimitGB)
+            memoryLimitGB: p.memoryLimitGB, mtpStreamedExperts: p.mtpStreamedExperts)
     }
 }

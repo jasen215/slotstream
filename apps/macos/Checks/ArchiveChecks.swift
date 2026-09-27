@@ -7,7 +7,7 @@ func archiveChecks(root: URL, dbmd: URL) async throws {
     try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
     try Data("Cedar review evidence: verify backups before enabling AI.".utf8).write(to: source.appendingPathComponent("notes.md"))
     let probe = ScriptedInference(turns: [
-        EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("file-1")])]),
+        EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("a1:notes.md")])]),
         EngineTurn(text: "Review this document.", calls: [ProposedTool(name: "artifact.propose", arguments: ["filename": .string("archive-proof.md"), "content": .string("# Restored proposal\n\nVerify before enabling AI. [S1]\n")])])])
     let runtime = try SevraRuntime(homeURL: root.appendingPathComponent("archive-owner"), dbmd: dbmd, inference: probe)
     try await runtime.attach(threadID: "home", folder: source)

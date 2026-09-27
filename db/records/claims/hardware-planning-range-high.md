@@ -2,7 +2,7 @@
 type: claim
 id: 01m2dtc5qm5k3khph0d5j5zer2
 created: 2026-09-13T16:42:28.468306+00:00
-updated: 2026-09-22T19:23:15.997567+00:00
+updated: 2026-09-24T17:32:16.266308+00:00
 summary: Estimated warm reply range for 48 to less than 96 GB Macs
 basis: estimated
 gate: none; semantic review against the supporting evidence
@@ -51,3 +51,13 @@ automatic plan of a 32 GB Mac and cannot qualify a release-wide speed ratio.
 The new calibration attempt, retained raw observations, stricter prospective
 host-load screen and remaining gaps are recorded in
 [[records/measurements/release-speed-calibration-2026-09-22]].
+
+## A report below the range, 2026-09-24
+
+A 64 GB M3 Max reported 12.38 tok/s on 0.2.18
+([[records/measurements/c4-macbook-pro-m3-max-64gb-community]]), below the
+~15 floor; a 64 GB M4 Max reported 15.93 tok/s on 0.2.22 with the same plan
+([[records/measurements/c5-macbook-pro-m4-max-64gb-community]]). The range
+stays ~15–27 tok/s until the M3 Max is rerun on the current release, and the
+hardware guide names that report beside the range. Reasoning in
+[[records/measurements/hardware-planning-ranges-2026-09-13]].

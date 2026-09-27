@@ -129,7 +129,8 @@ public final class PersistentPrefixCache {
 
     /// Creates the directory owner-only, takes its exclusive lock, indexes its
     /// files and removes what this build cannot use or the limits exclude.
-    /// Throws when another process or cache holds the directory.
+    /// Throws when another process or cache holds the directory, or a file
+    /// cannot be read. An I/O failure does not prove that its state is invalid.
     public init(configuration: PersistentPrefixConfiguration, identity: PersistentPrefixIdentity) throws {
         guard configuration.maxBytes > 0 else { throw ModelError("the prefix cache disk quota must be positive") }
         guard configuration.minimumTokens >= 1, configuration.minimumTokens <= ContextPolicy.modelLimit else {
@@ -142,7 +143,7 @@ public final class PersistentPrefixCache {
         self.identity = identity
         try Self.prepareDirectory(configuration.directory)
         lockDescriptor = try Self.lockDirectory(configuration.directory)
-        maintenance = openDirectory()
+        maintenance = try openDirectory()
     }
 
     deinit {
@@ -176,7 +177,17 @@ public final class PersistentPrefixCache {
 
     // MARK: opening
 
-    private func openDirectory() -> Maintenance {
+    /// A file the system would not let the cache read, for a reason other
+    /// than its format: permissions or an I/O error. Its state may still be
+    /// valid, so opening keeps it and refuses the directory instead of
+    /// indexing without it or deleting it.
+    public struct UnreadableFile: Error, CustomStringConvertible {
+        public let name: String
+        public let reason: String
+        public var description: String { reason.contains(name) ? reason : "prefix cache file \(name): \(reason)" }
+    }
+
+    private func openDirectory() throws -> Maintenance {
         let directory = configuration.directory
         var result = Maintenance()
         var found: [PersistentPrefixEntry] = []
@@ -204,8 +215,10 @@ public final class PersistentPrefixCache {
                 case .segment(let segment): discard(name, segment.bytes, \.otherBuilds)
                 case .otherFormat(let bytes): discard(name, bytes, \.otherBuilds)
                 }
-            } catch {
+            } catch is PersistentPrefixFileError {
                 discard(name, Self.fileSize(path), \.unreadable)
+            } catch {
+                throw UnreadableFile(name: name, reason: "\(error)")
             }
         }
         let now = Self.now()
@@ -249,10 +262,16 @@ public final class PersistentPrefixCache {
     package static func readFile(directory: URL, name: String) throws -> ScannedFile {
         typealias Failure = PersistentPrefixFileError
         let fd = open(directory.appendingPathComponent(name).path, O_RDONLY | O_CLOEXEC)
-        guard fd >= 0 else { throw Failure("cannot open: \(String(cString: strerror(errno)))") }
+        guard fd >= 0 else {
+            let reason = String(cString: strerror(errno))
+            if errno == ENOENT { throw Failure("file \(name) is missing") }
+            throw ModelError("cannot open prefix cache file \(name): \(reason)")
+        }
         defer { close(fd) }
         var info = stat()
-        guard fstat(fd, &info) == 0 else { throw Failure("cannot stat") }
+        guard fstat(fd, &info) == 0 else {
+            throw ModelError("cannot stat prefix cache file \(name): \(String(cString: strerror(errno)))")
+        }
         let size = Int64(info.st_size)
         let modified = Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1e9
         let (data, payloadEnd) = try PersistentPrefixFile.readHeaderData(fd, size: size)
@@ -314,7 +333,11 @@ public final class PersistentPrefixCache {
         var expected = Int64(PersistentPrefixFile.magic.count)
         var names = Set<String>()
         for record in header.arrays {
-            guard record.offset == expected, record.byteCount >= 0, names.insert(record.name).inserted else {
+            // Validate against the real payload before adding an untrusted
+            // length: a damaged header must throw, not overflow and trap.
+            guard record.offset == expected, record.byteCount >= 0,
+                  expected <= payloadEnd, record.byteCount <= payloadEnd - expected,
+                  names.insert(record.name).inserted else {
                 throw Failure("array \(record.name) is out of place")
             }
             expected += record.byteCount
@@ -664,13 +687,23 @@ extension PersistentPrefixCache {
         }
         var files = 0
         var bytes: Int64 = 0
+        var failures: [String] = []
         for name in try FileManager.default.contentsOfDirectory(atPath: directory.path) where isStateFile(name) {
             let path = directory.appendingPathComponent(name).path
             let size = fileSize(path)
             if unlink(path) == 0 {
                 files += 1
                 bytes += size
+            } else {
+                // An erase removes every file it can, then names each one it
+                // could not, rather than stopping at the first.
+                let code = errno
+                if code != ENOENT { failures.append("\(path): \(String(cString: strerror(code)))") }
             }
+        }
+        guard failures.isEmpty else {
+            throw ModelError("removed \(files) prefix cache file\(files == 1 ? "" : "s") but could not remove "
+                + "\(failures.count): " + failures.joined(separator: "; "))
         }
         return (files, bytes)
     }

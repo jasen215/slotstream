@@ -3,18 +3,24 @@
 [![Latest release](https://img.shields.io/github/v/release/carloslfu/slotstream?label=latest%20release)](https://github.com/carloslfu/slotstream/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/carloslfu/slotstream?style=flat&logo=github&label=stars)](#star-history)
 
-**Run a 105 GB AI model on a 48 GB Mac.**
+**Run a 105 GB AI model on a Mac that can't hold it.**
 
 Slotstream runs [Qwen3.8-Flash-Next](https://huggingface.co/pipenetwork/Qwen3.8-Flash-Next-MLX-4bit),
-a large open model, on your Mac by keeping most of it on SSD and loading the
-parts it needs into memory. It is built for Macs with 16 to 64 GB of memory,
-where the model cannot fit. After a one-time download the model works
-offline, with no Python and no cloud account. The whole engine is one native
-Swift program on Apple's MLX and Metal; see [Built native](#built-native).
+a 125-billion-parameter open model, on Macs with 16 to 64 GB of memory. It
+keeps most of the model on the SSD and loads the parts it needs as it writes.
+Our 48 GB M5 Pro measured 15.86 tokens per second at a 22 GB memory target
+([how it was measured](#speed)).
 
-Use it to chat, ask about pictures, or work with files through a coding agent
-such as Claude Code, Codex, Pi, opencode or Hermes. Developers can connect
-their own apps through its APIs or Swift library.
+Chat with it, ask it about pictures, or code with it: `slotstream launch claude`
+starts Claude Code on the local model, and Codex, Pi, opencode and Hermes work
+the same way. Developers can connect their own apps through its Ollama-,
+OpenAI- and Anthropic-compatible APIs or its Swift library.
+
+After a one-time download it works offline, with no Python and no cloud
+account. The whole engine is one native Swift program on Apple's MLX and
+Metal; see [Built native](#built-native). Every published number has a
+recorded method, and the experiments that failed stay in the
+[measurements](MEASUREMENTS.md).
 
 [Get started](#install) · [Speed](#speed) · [Guides](#guides) · [Get help](#support)
 

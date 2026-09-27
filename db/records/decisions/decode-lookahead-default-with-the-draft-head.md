@@ -2,7 +2,7 @@
 type: decision
 id: 01m2dg0ergyn265p9pzp507n22
 created: 2026-09-13T13:41:18.736801+00:00
-updated: 2026-09-13T13:41:18.736801+00:00
+updated: 2026-09-24T19:15:55.678983+00:00
 summary: Router-reuse prefetch, FP32 router weights and a four-layer GPU barrier run wherever the draft head does, charged 373 MiB; held out at 1.114 with identical output
 decided_on: 2026-09-13
 evidence: '[[records/measurements/decode-path-serialization-b1-cohort-replication-2026-09-13]]'
@@ -29,3 +29,5 @@ A T0 check parses the B1 candidate environment and requires it to equal the buil
 **Overrides.** `SLOTSTREAM_OPT_EXPERT_PREFETCH=0` turns the default off and charges nothing. `SLOTSTREAM_OPT_ROUTER_WEIGHTS` and `SLOTSTREAM_DECODE_BARRIER_LAYERS` still override their parts. `SLOTSTREAM_OPT_EXPERT_PREFETCH=1`, or an explicit `SLOTSTREAM_EXPERT_LOOKAHEAD_RESERVE_MIB`, selects the experimental configuration the tuning variables describe; tuning variables alone leave the default unchanged. Comparisons against the former default must set the switch to 0.
 
 **Scope.** Timed on one 48 GB M5 Pro at a 20 GB target with two drafts, caches of about 88 experts per layer. The automatic ceiling's larger caches, 149 to 161 experts per layer, and other chips and SSDs are not timed; the public tier estimates hold flat above the measured cache size rather than extrapolate.
+
+**Addendum (2026-09-24).** The draft head can now stream its experts, and its automatic floor is 28 experts per layer after that smaller charge ([[records/decisions/draft-head-streams-its-experts-below-76-per-layer]]); the lookahead rides a streamed head from the same floor. Without the head it now runs in plain decode from 20 experts per layer ([[records/decisions/decode-lookahead-in-plain-decode]]). The configuration and charge are unchanged.

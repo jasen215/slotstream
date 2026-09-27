@@ -89,6 +89,15 @@ public struct ContextMemoryLedger: Sendable {
 
     public init(slots: Int, context: Int, chunk: Int, retentionTokens: Int,
                 mtp: Bool, visionResident: Bool, lookaheadReserveBytes: Int = 0) {
+        self.init(slots: slots, context: context, chunk: chunk, retentionTokens: retentionTokens,
+            mtp: mtp, mtpStreamedExperts: false, visionResident: visionResident,
+            lookaheadReserveBytes: lookaheadReserveBytes)
+    }
+
+    /// `mtpStreamedExperts` charges a draft head whose routed experts stream
+    /// through a small cache instead of staying resident.
+    public init(slots: Int, context: Int, chunk: Int, retentionTokens: Int,
+                mtp: Bool, mtpStreamedExperts: Bool, visionResident: Bool, lookaheadReserveBytes: Int = 0) {
         self.lookaheadReserveBytes = max(0, lookaheadReserveBytes)
         fixedBytes = PlannerCostModel.fixedBytes
         poolBytes = ContextBytes.product(slots, Int(Geometry.recordBytes))
@@ -99,7 +108,8 @@ public struct ContextMemoryLedger: Sendable {
             ? (PrefixCache.maxEntries - 1) * PrefixCache.fixedBytesPerEntry : 0
         prefillBytes = ContextBytes.product(chunk, PlannerCostModel.prefillBytesPerToken)
         longContextReserveBytes = Self.transientReserveBytes(context: context, mtp: mtp)
-        mtpResidentBytes = mtp ? PlannerCostModel.mtpResidentBytes : 0
+        // A head that streams its experts keeps only a small cache of them.
+        mtpResidentBytes = mtp ? (mtpStreamedExperts ? PlannerCostModel.mtpStreamedBytes : PlannerCostModel.mtpResidentBytes) : 0
         visionResidentBytes = visionResident ? PlannerCostModel.visionResidentBytes : 0
         planningMarginBytes = PlannerCostModel.planningMarginBytes
     }

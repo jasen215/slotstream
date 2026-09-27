@@ -35,6 +35,7 @@ private func eventually(_ predicate: () async -> Bool) async throws {
     throw SevraError.refused("CHECK FAILED: lifecycle did not settle")
 }
 func performanceChecks(root: URL, dbmd: URL) async throws {
+    try modelVerificationChecks(root: root)
     var plans = 0, refused = 0
     for ram in [8.0, 16, 24, 32, 48, 64, 96, 128] {
         for available in [0.0, 3, 8, 10, 13, 20, 35, 70] where available <= ram {
@@ -57,6 +58,18 @@ func performanceChecks(root: URL, dbmd: URL) async throws {
         }
     }
     try verifyPerformance(plans > 0 && refused > 0, "sweep includes accepted and refused plans")
+    let roomy = Machine.simulated(ramGB: 48, availableGB: 40)
+    let fast = try PerformancePolicy.plan(.init(), on: roomy, mtpAvailable: true)
+    try verifyPerformance(fast.mtpEnabled && fast.decodeLookahead, "Desktop enables qualified automatic MTP and lookahead when they fit")
+    try verifyPerformance(fast.targetGB == Planner.usefulCeilingGB && fast.memoryLimitGB == Planner.usefulCeilingGB,
+        "automatic MTP charges the head inside the displayed total ceiling")
+    let corrected = try PerformancePolicy.plan(.init(), on: roomy, mtpAvailable: true, decodeLookahead: .automaticCorrected(bytes: 40_000_000))
+    try verifyPerformance(corrected.lookaheadReserveBytes > fast.lookaheadReserveBytes && corrected.slots < fast.slots
+        && corrected.targetGB == fast.targetGB, "a shipped forecast correction is charged inside the same budget")
+    let small = try PerformancePolicy.plan(.init(budget: .custom, customGB: 10), on: roomy, mtpAvailable: true)
+    try verifyPerformance(!small.mtpEnabled, "a small budget retains ordinary decoding")
+    let absent = try PerformancePolicy.plan(.init(), on: roomy, mtpAvailable: false)
+    try verifyPerformance(!absent.mtpEnabled, "an absent optional draft head never blocks chat")
     let big = Machine.simulated(ramGB: 64 * 1.073741824, availableGB: 62)
     let custom = PerformancePreferences(budget: .custom, customGB: 48)
     let larger = try PerformancePolicy.plan(custom, on: big)
@@ -94,6 +107,9 @@ func performanceChecks(root: URL, dbmd: URL) async throws {
         try verifyPerformance(PerformancePolicy.shouldRelease(idleSeconds: delay, preparationSeconds: cost, preferences: .init(), pressure: false, conservingPower: false), "release at deadline")
         try verifyPerformance(!PerformancePolicy.shouldRelease(idleSeconds: delay + 1, preparationSeconds: cost, preferences: saved, pressure: false, conservingPower: false), "keep ready retained")
         try verifyPerformance(PerformancePolicy.shouldRelease(idleSeconds: 0, preparationSeconds: cost, preferences: saved, pressure: true, conservingPower: false), "pressure overrides keep ready")
+        try verifyPerformance(!PerformancePolicy.shouldRelease(idleSeconds: delay + 1, preparationSeconds: cost, preferences: .init(), pressure: false, conservingPower: false, userPresent: true), "reading or composing in foreground keeps the model ready")
+        try verifyPerformance(PerformancePolicy.shouldRelease(idleSeconds: delay + 1, preparationSeconds: cost, preferences: .init(), pressure: false, conservingPower: true, userPresent: true), "power saving still releases an idle foreground model")
+        try verifyPerformance(PerformancePolicy.shouldRelease(idleSeconds: 0, preparationSeconds: cost, preferences: .init(), pressure: true, conservingPower: false, userPresent: true), "pressure overrides foreground readiness")
     }
     print("PASS: memory plans \(plans) accepted / \(refused) safely refused; custom ceilings, unavailable readings, persistence, stable ranges and idle/pressure policy")
 
@@ -216,7 +232,12 @@ func realPerformanceCheckIfRequested() async throws -> Bool {
         try await request("Reply with only OK.", nonce: "reloaded")
         await runtime.maintainPerformance()
         try verifyPerformance((await runtime.snapshot().performance?.budgetGB ?? 100) <= 9.0001, "new live budget respects custom ceiling")
-        await runtime.maintainPerformance(now: ProcessInfo.processInfo.systemUptime + 3601)
+        let idleStart = ProcessInfo.processInfo.systemUptime
+        await runtime.maintainPerformance(now: idleStart + 3601, userPresent: true)
+        try verifyPerformance(inference.performanceTelemetry?.isLoaded == true, "foreground reading retains the real model")
+        await runtime.maintainPerformance(now: idleStart + 3602)
+        try verifyPerformance(inference.performanceTelemetry?.isLoaded == true, "leaving foreground starts a fresh idle interval")
+        await runtime.maintainPerformance(now: idleStart + 7201)
         try verifyPerformance(inference.performanceTelemetry?.isLoaded == false, "real automatic idle release")
         try verifyPerformance(await runtime.snapshot().home.threads[0].draft == "Resource QA draft", "draft survives real reloads")
         try await runtime.shutdown()

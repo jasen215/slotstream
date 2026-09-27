@@ -80,6 +80,11 @@ public struct InferenceOptimizations: Codable, Equatable {
     public var contiguousSlotWrites = false
     public var wordSlotWrites = false
     public var cpuSlotWrites = false
+    /// Demand misses read into host scratch and copied straight into their
+    /// pool slots, without staging arrays or a GPU scatter. Same bytes in the
+    /// same slots, so arithmetic is unchanged. In the deployment family.
+    /// Optional so control sets saved before the path decode unchanged.
+    public var directDemandReads: Bool? = nil
     /// Exact already-scheduled commit boundary; zero disables common-prefix retention.
     public var prefixCheckpointTokens = 0
     /// Retain the complete committed prompt and its raw last logits. This is
@@ -150,6 +155,7 @@ public struct InferenceOptimizations: Codable, Equatable {
         result.sharedRoPE = true
         result.fusedRoPE = true
         result.verifySplitAttention = true
+        result.directDemandReads = true
         return result
     }
 
@@ -248,6 +254,8 @@ public struct InferenceOptimizations: Codable, Equatable {
         guard !result.cpuSlotWrites || (!result.wordSlotWrites && !result.contiguousSlotWrites) else {
             throw ModelError("SLOT_CPU cannot be combined with SLOT_WORDS or SLOT_SLICES")
         }
+        result.directDemandReads = try flag("SLOTSTREAM_OPT_DIRECT_DEMAND",
+            fallback: result.directDemandReads ?? false) ? true : nil
         let checkpointKey = "SLOTSTREAM_OPT_PREFIX_CHECKPOINT"
         recognized.insert(checkpointKey)
         if let value = env[checkpointKey] {

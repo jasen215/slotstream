@@ -8,6 +8,147 @@ determines which version the installer downloads.
 
 ## Unreleased
 
+- The prefix cache's disk tier now writes states from 1,024 tokens instead
+  of 2,048 (`--prefix-cache-min-tokens`). After a restart, a 1,919-token
+  conversation re-read its whole prompt in 45.5 s under the old default and
+  resumed with 6.0 s of prefill under the new one. The servers `slotstream
+  launch` starts and the development Mac app use this default, so Pi's
+  opening prompt of about 1,600 tokens now reaches the disk. Each turn of a
+  conversation between the two lengths now writes its state, about 120 to
+  170 MB, within the same quota. Measured by
+  [@jasen215](https://github.com/jasen215) in
+  [#17](https://github.com/carloslfu/slotstream/issues/17).
+- `slotstream parity --compare` refuses a NaN or infinite value instead of
+  printing `PARITY PASS`. Swift's `max` drops a NaN, so such a dump could
+  pass. By [@Pybsama](https://github.com/Pybsama) in
+  [#31](https://github.com/carloslfu/slotstream/pull/31).
+- `/v1/responses` accepts its own output replayed after parallel tool calls.
+  The model writes a newline between calls, which streams as a message item
+  between them, and a client replaying that output, as Codex does, got a
+  400. By [@Pybsama](https://github.com/Pybsama) in
+  [#32](https://github.com/carloslfu/slotstream/pull/32).
+- Raw downloads (`--transport raw`, source overrides and resumed legacy
+  downloads) honor a server's `Retry-After` and `RateLimit` headers, as
+  compressed downloads have since 0.2.11, instead of retrying after 2 to 8
+  seconds. Each wait is capped at 10 minutes. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#33](https://github.com/carloslfu/slotstream/pull/33).
+- `slotstream prefix-cache --clear` names every file it could not remove and
+  exits with an error, instead of reporting only the files it removed. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#34](https://github.com/carloslfu/slotstream/pull/34).
+- Control+C while `slotstream pull`, or the download `run`, `serve` and
+  `launch` offer on first use, fetches the decode-forecast file now stops
+  the command with exit code 130. The fetch caught the cancellation, so
+  `pull` reported ready and the others went on to load the model. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#36](https://github.com/carloslfu/slotstream/pull/36).
+- Opening the prefix cache directory keeps a file the system refuses to
+  read, because of its permissions or an I/O error, instead of deleting it
+  and the states that depend on it; damaged files are still removed. `serve`
+  then runs without the disk cache and names the file. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#37](https://github.com/carloslfu/slotstream/pull/37).
+- `/v1/messages` joins consecutive messages of one role into one turn, as
+  the Messages API does, so tool results split across adjacent user messages
+  are accepted. By [@Pybsama](https://github.com/Pybsama) in
+  [#40](https://github.com/carloslfu/slotstream/pull/40).
+- The server answers 431 for any request whose headers exceed 64 KiB.
+  Headers of up to 128 KiB were served when their closing blank line arrived
+  in the read that crossed the limit. By
+  [@Pybsama](https://github.com/Pybsama) in
+  [#42](https://github.com/carloslfu/slotstream/pull/42).
+- A prefix cache file whose header gives an impossible array length or row
+  range is removed as damaged when the directory opens, instead of crashing
+  the server, the development Mac app or `slotstream prefix-cache` every time
+  they open it. By [@Pybsama](https://github.com/Pybsama) in
+  [#43](https://github.com/carloslfu/slotstream/pull/43).
+
+## 0.2.25 - 2026-09-24
+
+- The GPU stays awake while a request generates. Streamed decode leaves the
+  GPU idle between short bursts of work, and an idle GPU lowers its clock and
+  starts the next burst late; a one-thread kernel on its own command queue now
+  keeps it busy, with outputs unchanged. It costs power, so
+  `--gpu-keepalive auto`, the default, runs it only on AC power outside Low
+  Power Mode; `on` and `off` override it, and `SLOTSTREAM_GPU_KEEPALIVE` sets
+  the default. Saved statistics report `gpuKeptAwake`.
+- Cache misses are read into host memory and copied straight into their cache
+  slots instead of passing through staging arrays and a GPU scatter.
+  `SLOTSTREAM_OPT_DIRECT_DEMAND=0` restores the previous path.
+- Together, on the development Mac with identical output, the two made decode
+  1.28x faster at a 10 GB target without the draft head and 1.22x faster at
+  22 GB with it. `decode-overlap-check` compares both against the previous
+  paths on a cold cache and covers the direct reads' failure recovery.
+- The draft head can stream its experts. On a cache below 76 experts per
+  layer after the head's full 1.6 GB charge, its 512 experts now stay on the
+  SSD and pass through a 64-expert cache of their own, charged 0.4 GB, so the
+  main cache keeps the other 1.2 GB; the output is the same. Automatic mode
+  turns the head on from 28 experts per layer instead of 76, a 12 GB target,
+  so 24 GB Macs now run speculative decoding. At a 12 GB target the head
+  decoded 1.23x faster than plain decode with the lookahead.
+  `SLOTSTREAM_MTP_EXPERTS=resident|streamed` forces a placement and
+  `doctor --json` reports `mtp_streamed_experts`. The automatic context window
+  never trades a resident head for a streamed one, so the draft-head tiers
+  keep their windows; `--max-context 65536` on a 32 GB Mac now keeps
+  speculative decoding with the head's experts streamed, and `--mtp on` fits
+  from an 8.5 GB target.
+- Without the draft head, the decode lookahead now runs in plain decode from
+  20 experts per layer before its charge, including `--mtp off` and installs
+  without the head's file. It made plain decode 1.11x faster at a 10 GB
+  target with identical output. `SLOTSTREAM_OPT_EXPERT_PREFETCH=0` turns it
+  off. Its 373 MiB moves a 48 GB Mac without the head from 152 to 149 experts
+  per layer, inside the measured decode range, so that Mac's automatic window
+  becomes 131,072 tokens.
+- `draft-stream-check` compares a streamed head with a resident one and plain
+  decode with and without the lookahead, and injects a failed draft read.
+
+- The development Mac app attaches folders without a whole-tree scan or a
+  file-count cap. Live directory browsing, filename search and scoped content
+  search discover new and renamed files. Bounded continuations retain matches
+  within a file, detect directory changes and expire under resource pressure.
+  Reads can use a returned ID or a relative path inside the selected folder.
+- Edits require a fresh read after an external file change. Attachment errors
+  no longer offer the unrelated Home-reconciliation action, and the assistant
+  is told how local folder access is granted.
+
+- A shared system prompt kept on disk now survives when its save lands on
+  the conversation's own checkpoint, which happens when the system prompt
+  and the end of the prompt fall in the same prefill pass. The checkpoint
+  was written first, the shared save found it and stopped, and a later turn
+  removed it, so other conversations and restarts read the system prompt
+  again. The head is now upgraded to shared, and a shared save that is
+  skipped or fails is logged. Found and fixed by
+  [@jasen215](https://github.com/jasen215) in
+  [#27](https://github.com/carloslfu/slotstream/pull/27), for
+  [#18](https://github.com/carloslfu/slotstream/issues/18).
+
+- The development Mac app uses automatic speculative decoding when the draft
+  head is available and fits the selected memory budget. Short conversations
+  create earlier reusable checkpoints; longer prompts keep the engine's
+  throughput schedule and all checkpoint provenance checks.
+- Automatic readiness retains a loaded model while you read or compose in
+  the foreground. Background inactivity, memory pressure, power saving and
+  sleep still release it. Reloads within an app session reuse successful pinned
+  verification only when APFS file identity and change timestamps still match.
+  New app launches and changed files require fresh verification. Immediate
+  reloads also wait for macOS's memory-statistics refresh before replanning,
+  preventing stale readings from unnecessarily shrinking the cache.
+- Growing the expert cache preserves slot positions and avoids gathering a
+  second copy of the occupied cache. The live governor also checks temporary
+  replacement memory against the process target and available system memory.
+  When growth cannot fit, it keeps the current warm cache and retries later.
+- The download `slotstream run` offers on first use and the development Mac
+  app's model download now also fetch the 37.5 MB decode-forecast file 0.2.19
+  added. Only `slotstream pull` did, so models downloaded the other ways
+  decoded with the earlier, slower forecast. A model already downloaded
+  without the file still needs one `slotstream pull`: `slotstream doctor` now
+  says when the file is missing, and the engine's startup line names the
+  command. Three community reports on 0.2.22 ran without the file. The
+  library's `WeightStore.download(_:log:)` still fetches the weights only;
+  the [library guide](docs/LIBRARY.md#check-and-download-weights) shows how
+  to fetch the file with `TapCorrectionSidecar.ensure`.
+
 ## 0.2.24 - 2026-09-23
 
 - Nullable string tool parameters declared with a JSON Schema type array now

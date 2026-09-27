@@ -14,7 +14,8 @@ public enum ContextWindowChoice: Sendable, Equatable {
 /// plan on this machine's hardware tier (RAM and Metal working set, never how
 /// busy the machine happens to be):
 /// - keeps speculative decoding and the decode lookahead as they are at the
-///   default window,
+///   default window, including a draft head's resident experts, whose
+///   streamed reads the estimate does not price,
 /// - retains one complete conversation of the window, so follow-up turns read
 ///   only what is new, and
 /// - adds at most `ContextPolicy.automaticRequestTimeTolerance` to the
@@ -131,6 +132,12 @@ extension Planner {
     /// obey the same performance policy, not merely find any plan that fits.
     package static func automaticWindowRefusal(_ candidate: MemoryPlan, from baseline: MemoryPlan) -> String? {
         if baseline.mtpEnabled && !candidate.mtpEnabled { return "turns speculative decoding off" }
+        // The estimate leaves speculative decoding out because this rule holds
+        // it fixed, and a streamed head is not the resident head: it reads its
+        // experts during decode, which the estimate does not price.
+        if baseline.mtpEnabled && !baseline.mtpStreamedExperts && candidate.mtpStreamedExperts {
+            return "streams the draft head's experts, a cost the estimate does not price"
+        }
         if baseline.decodeLookahead && !candidate.decodeLookahead { return "turns the decode lookahead off" }
         if hasUnmeasuredCacheReduction(candidate, from: baseline) {
             return String(format: "would remove %.1f GB of expert cache with an unmeasured performance cost; use --max-context %d to choose this tradeoff",
@@ -174,7 +181,8 @@ extension Planner {
                     vision: request.vision, visionAvailable: visionAvailable,
                     maxContextTokens: window, simulated: true, qualification: false,
                     runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead,
-                    retention: window > base ? .completeWindow : .automatic)
+                    retention: window > base ? .completeWindow : .automatic,
+                    mtpExperts: request.mtpExperts ?? .automatic)
                 return (value, nil)
             } catch {
                 return (nil, String(describing: error))
@@ -235,7 +243,8 @@ extension Planner {
                 mtp: request.mtp, mtpAvailable: mtpAvailable,
                 vision: request.vision, visionAvailable: visionAvailable,
                 maxContextTokens: window, simulated: device.isSimulated, qualification: false,
-                runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead, retention: retention)
+                runtimePolicy: runtimePolicy, decodeLookahead: decodeLookahead, retention: retention,
+                mtpExperts: request.mtpExperts ?? .automatic)
         }
         switch choice {
         case .tokens(let tokens):

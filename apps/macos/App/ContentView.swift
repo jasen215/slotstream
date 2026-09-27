@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var editingMemory: String?
     @State private var memoryCorrection = ""
     @State private var pageEndID: String?
+    @State private var latestPage = LatestPage()
     @State private var outline: [DocumentRegion] = []
     @State private var artifactOutline: [DocumentRegion] = []
     @State private var scrolledAwayFromLatest = false
@@ -27,7 +28,6 @@ struct ContentView: View {
     @State private var artifactSourceMode = false
     @State private var documentNotice = ""
     @State private var showSources = false
-    @State private var archiveOnly = false
     @State private var settingsCategory = SettingsCategory.general
     @State private var selectedSearchID: String?
     @FocusState private var searchFocused: Bool
@@ -39,22 +39,13 @@ struct ContentView: View {
     private var secondaryInk: Color { contrast == .increased ? .primary : scheme == .dark ? Color(red: 184/255, green: 182/255, blue: 170/255) : Color(red: 99/255, green: 97/255, blue: 91/255) }
     private var boundary: Color { contrast == .increased ? .primary : scheme == .dark ? Color(red: 133/255, green: 130/255, blue: 119/255) : Color(red: 133/255, green: 130/255, blue: 121/255) }
     private var palette: Palette { Palette(scheme: scheme, contrast: contrast) }
-    private var messages: [Message] {
-        guard let thread = model.thread, let home = model.snapshot?.home else { return [] }
-        return home.conversationMessages(for: thread).filter { !$0.text.isEmpty }
-    }
+    private var messages: [Message] { model.conversationMessages }
     private func speaker(_ message: Message) -> String {
         (message.role == "user" ? "You" : "Sevra") + ((model.thread?.promotedMessageIDs.contains(message.id) ?? false) ? " · From Home" : "")
     }
     private var allSource: String { messages.map { "## " + speaker($0) + "\n\n" + $0.text }.joined(separator: "\n\n") }
     private var artifactOpen: Bool { model.panel == "Artifact" }
     private var ready: Bool { model.composer.ready }
-    private var threadList: [WorkThread] {
-        (model.snapshot?.home.threads ?? []).filter { $0.id != "home" && ($0.lifecycle == .archived) == archiveOnly }.sorted {
-            if $0.pinned != $1.pinned { return $0.pinned }
-            return (model.snapshot?.home.conversationMessages(for: $0).last?.date ?? .distantPast) > (model.snapshot?.home.conversationMessages(for: $1).last?.date ?? .distantPast)
-        }
-    }
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= 960
@@ -85,12 +76,12 @@ struct ContentView: View {
                         errorBanner
                         if split {
                             HSplitView {
-                                VStack(spacing: 0) { conversation; composer(maxHeight: geometry.size.height * 0.30, compact: true) }.frame(minWidth: 360, idealWidth: 430, maxWidth: 520)
+                                VStack(spacing: 0) { conversation(); ComposerObserver(composer: model.composer) { composer(maxHeight: geometry.size.height * 0.30, compact: true) } }.frame(minWidth: 360, idealWidth: 430, maxWidth: 520)
                                 artifact.frame(minWidth: 480)
                             }
                         } else {
                             mainContent
-                            if model.panel.isEmpty || artifactOpen { composer(maxHeight: geometry.size.height * 0.30, compact: artifactOpen) }
+                            if model.panel.isEmpty || artifactOpen { ComposerObserver(composer: model.composer) { composer(maxHeight: geometry.size.height * 0.30, compact: artifactOpen) } }
                         }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }.disabled(overlayRail).accessibilityHidden(overlayRail)
@@ -116,7 +107,8 @@ struct ContentView: View {
         .onChange(of: model.selectedID) { _, id in
             pageEndID = nil; scrolledAwayFromLatest = false; sourceMode = false; artifactSourceMode = false; outline = []; artifactOutline = []; documentNotice = ""; overlayRail = false
             model.textSession.pendingLatestDocumentID = nil
-            if id != "home", model.thread?.lifecycle != .archived { archiveOnly = false }
+            if id != "home", model.thread?.lifecycle != .archived { model.sidebar.archiveOnly = false }
+            latestPage.reset()
         }
         .onChange(of: model.panel) { _, value in
             overlayRail = false; documentNotice = ""
@@ -139,77 +131,11 @@ struct ContentView: View {
         else if !model.panel.isEmpty { model.closePanel() }
     }
     private func dismissNavigation() { overlayRail = false; model.textSession.restoreFocus() }
-    private func openPanel(_ panel: String) { model.panel = panel; overlayRail = false }
     @ViewBuilder private func sidebar(height: CGFloat) -> some View {
         if height < 600 { ScrollView { sidebar.frame(height: 600) }.accessibilityLabel("Navigation") }
         else { sidebar }
     }
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                ObserverMark().fill(.primary).frame(width: 32, height: 32).accessibilityHidden(true)
-                Text("sevra").font(.custom("Poppins-Medium", size: 26)).tracking(-0.65)
-            }.padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8).accessibilityLabel("Sevra")
-            railButton("Home", symbol: "house", selected: model.selectedID == "home" && model.panel.isEmpty) { model.navigate("home") }
-            Button { openPanel("Needs you") } label: {
-                HStack { navigationLabel("Needs you", symbol: "tray"); Spacer(); let count = model.snapshot?.home.threads.filter { $0.run?.state == .needsYou }.count ?? 0; if count > 0 { Text("\(count)").monospacedDigit().font(.caption.weight(.semibold)) } }
-            }.buttonStyle(RailButton(selected: model.panel == "Needs you")).help("Review work waiting for your decision")
-            HStack {
-                Text(archiveOnly ? "Archived threads" : "Threads").font(.caption).foregroundStyle(secondaryInk)
-                Spacer()
-                NativeIconButton(symbol: "plus", title: "New Thread", help: "New thread (⌘N)", action: { model.newThread() }).frame(width: 28, height: 28).disabled(!ready)
-            }.padding(.horizontal, 12).padding(.top, 16).padding(.bottom, 4)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    if threadList.isEmpty { Text(archiveOnly ? "No archived threads." : "Start a thread for ongoing work.").font(.callout).foregroundStyle(secondaryInk).padding(12) }
-                    ForEach(threadList) { thread in
-                        threadRow(thread)
-                    }
-                }
-            }.accessibilityLabel("Threads")
-            Button { archiveOnly.toggle() } label: { navigationLabel(archiveOnly ? "Open threads" : "Archived", symbol: "archivebox") }.buttonStyle(RailButton(selected: archiveOnly)).help(archiveOnly ? "Show open and completed threads" : "Show archived threads")
-            Divider().padding(.vertical, 4)
-            railButton("Journal", symbol: "book.closed", selected: model.panel == "Journal") { openPanel("Journal") }
-            railButton("Apps & Skills", symbol: "square.grid.2x2", selected: model.panel == "Apps") { openPanel("Apps") }
-            if let running = model.runningApp {
-                Button { openPanel("App") } label: { navigationLabel(running.session.name, symbol: "app").padding(.leading, 12) }
-                    .buttonStyle(RailButton(selected: model.panel == "App")).help("Return to \(running.session.name), which is open")
-            }
-            railButton("Knowledge", symbol: "square.stack", selected: model.panel == "Knowledge") { openPanel("Knowledge") }
-            railButton("Settings", symbol: "gearshape", selected: model.panel == "Settings") { openPanel("Settings") }
-            Text("Development build · Local only").font(.caption).foregroundStyle(secondaryInk).padding(12)
-        }.padding(.horizontal, 8).padding(.bottom, 8)
-    }
-    private func threadRow(_ thread: WorkThread) -> some View {
-        Button { model.navigate(thread.id) } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: thread.mode == .incognito ? "eye.slash" : thread.lifecycle == .needsYou ? "tray" : thread.lifecycle == .done ? "checkmark.circle" : "text.bubble").frame(width: 16, height: 18).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(thread.title).lineLimit(2).multilineTextAlignment(.leading)
-                    if thread.run?.state.terminal == false { Text(thread.run?.state == .needsYou ? "Review needed" : thread.run?.state == .queued ? "Queued" : "Working").font(.caption).foregroundStyle(secondaryInk) }
-                }
-                Spacer(minLength: 0)
-                if thread.pinned { Image(systemName: "pin.fill").font(.caption2).accessibilityLabel("Pinned") }
-            }
-        }.buttonStyle(RailButton(selected: model.selectedID == thread.id && model.panel.isEmpty))
-            .accessibilityLabel(thread.title + ", " + thread.mode.title + ", " + lifecycleTitle(thread.lifecycle))
-            .help(thread.title + " · " + lifecycleTitle(thread.lifecycle) + ". Right-click for thread actions.").contextMenu { threadActions(thread) }
-    }
-    private func railButton(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) { navigationLabel(title, symbol: symbol) }.buttonStyle(RailButton(selected: selected)).help(title == "Home" ? "Open your Home conversation (⌘1)" : title == "Knowledge" ? "Inspect, correct, or forget saved memories" : title == "Journal" ? "Read and write your personal journal" : title == "Apps & Skills" ? "Your mini-apps and skills (⌘2)" : "Appearance, model, and keyboard settings (⌘,)")
-    }
-    private func navigationLabel(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 10) { Image(systemName: symbol).frame(width: 16, height: 18).accessibilityHidden(true); Text(title) }
-    }
-    @ViewBuilder private func threadActions(_ t: WorkThread) -> some View {
-        Button(t.pinned ? "Unpin Thread" : "Pin Thread") { model.perform { try await $0.pin(threadID: t.id) } }
-        Button("Rename Thread…") { model.renameThread(t.id) }
-        Button(t.lifecycle == .done || t.lifecycle == .archived ? "Reopen Thread" : "Mark Done") { model.perform { try await $0.lifecycle(threadID: t.id, value: t.lifecycle == .done || t.lifecycle == .archived ? .open : .done) } }.disabled(t.run?.state.terminal == false)
-        if t.lifecycle != .archived {
-            Button("Archive Thread") { model.perform { try await $0.lifecycle(threadID: t.id, value: .archived); if model.selectedID == t.id { model.navigate("home") } } }.disabled(t.run?.state.terminal == false)
-        }
-        if t.mode == .incognito { Button("Close Incognito Thread") { if model.selectedID == t.id { model.closeIncognito() } else { model.perform { try await $0.closeIncognito(threadID: t.id); model.textSession.discard(t.id) } } } }
-    }
+    private var sidebar: some View { SidebarView(state: model.sidebar, model: model, secondaryInk: secondaryInk) }
     private var homeChanges: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -243,18 +169,32 @@ struct ContentView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
                 Text(error).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                Button("Inspect Home changes…", action: model.inspectHomeChanges)
+                if model.snapshot?.storageNeedsReview == true {
+                    Button("Inspect Home changes…", action: model.inspectHomeChanges)
+                }
                 NativeIconButton(symbol: "xmark", title: "Dismiss error", help: "Dismiss this message", action: model.dismissError).frame(width: 28, height: 28)
             }.padding(12).background(Color.orange.opacity(0.08)).accessibilityElement(children: .contain).accessibilityLabel("Attention")
         }
     }
+    /// Panels cover the conversation instead of replacing it. It stays laid
+    /// out underneath, hidden and out of reach, so returning from a panel
+    /// needs no new layout of a long history.
     @ViewBuilder private var mainContent: some View {
+        let covered = Self.panels.contains(model.panel)
+        ZStack {
+            conversation(covered: covered)
+                .opacity(covered ? 0 : 1).allowsHitTesting(!covered).accessibilityHidden(covered).disabled(covered)
+            if covered { panelContent.frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+    }
+    private static let panels: Set<String> = ["Settings", "Search", "Needs you", "Knowledge", "Journal", "Rename", "Artifact", "Context", "Home changes", "Changes", "App review", "Skill review", "Apps", "App"]
+    @ViewBuilder private var panelContent: some View {
         switch model.panel {
         case "Settings": settings
         case "Search": search
         case "Needs you": needsYou
         case "Knowledge": knowledge
-        case "Journal": journal
+        case "Journal": ComposerObserver(composer: model.journalComposer) { journal }
         case "Rename": rename
         case "Artifact": artifact
         case "Context": contextInspector
@@ -264,10 +204,10 @@ struct ContentView: View {
         case "Skill review": SkillReviewPanel(model: model, palette: palette)
         case "Apps": AppsPanel(model: model, palette: palette)
         case "App": AppCanvas(model: model, palette: palette)
-        default: conversation
+        default: EmptyView()
         }
     }
-    private var conversation: some View {
+    private func conversation(covered: Bool = false) -> some View {
         VStack(spacing: 0) {
             if !ready {
                 VStack(spacing: 16) { if model.error == nil { ProgressView(); Text("Opening your Home…") } else { Text("Your Home could not be opened.").font(.headline); Text("Your saved files have been preserved. The message above explains what needs attention.").foregroundStyle(secondaryInk).multilineTextAlignment(.center) } }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -287,7 +227,7 @@ struct ContentView: View {
                 }.padding(.vertical, 32).readingColumn()
             } else {
                 documentToolbar
-                Transcript(documentID: model.selectedID + ":" + (pageEndID ?? "latest"), sections: loadedSections, fontSize: fontSize, sourceMode: sourceMode, session: model.textSession, onLink: model.inspectLink, onNotice: { if documentNotice != $0 { documentNotice = $0 } }, onOutline: { outline = $0 }, onScrollAwayFromLatest: { scrolledAwayFromLatest = $0 }, onDetails: model.showDetails)
+                Transcript(documentID: model.selectedID + ":" + (pageEndID ?? "latest"), sections: loadedSections, fontSize: fontSize, sourceMode: sourceMode, hidden: covered, session: model.textSession, onLink: model.inspectLink, onNotice: { if !covered, documentNotice != $0 { documentNotice = $0 } }, onOutline: { outline = $0 }, onScrollAwayFromLatest: { scrolledAwayFromLatest = $0 }, onDetails: model.showDetails)
                     .overlay(alignment: .bottom) {
                         if scrolledAwayFromLatest || pageEndID != nil {
                             NativeIconButton(symbol: "arrow.down", title: "Jump to latest message", help: "Jump to latest message (⌃⌘↓)", prominent: true, action: { jumpToLatest() })
@@ -310,11 +250,14 @@ struct ContentView: View {
             pageEndID = nil
         } else { model.textSession.conversation?.jumpToLatest(focus: focus) }
     }
-    private var page: Range<Int> { HistoryPage.range(byteCounts: messages.map { $0.text.utf8.count }, endingAt: pageEndID.flatMap { id in messages.firstIndex { $0.id == id }.map { $0 + 1 } }) }
+    private var page: Range<Int> {
+        let counts = model.conversationByteCounts
+        guard let pageEndID else { return latestPage.range(ids: model.conversationMessageIDs, byteCounts: counts, threadID: model.selectedID, readingEarlier: scrolledAwayFromLatest) }
+        return HistoryPage.range(byteCounts: counts, endingAt: messages.firstIndex { $0.id == pageEndID }.map { $0 + 1 })
+    }
     private var loadedSections: [DocumentSection] {
         messages[page].map { m in
-            var section = DocumentSection(id: m.id, speaker: speaker(m), source: m.text,
-                citationIDs: Set(model.thread.flatMap { model.snapshot?.home.citations(for: m.id, in: $0) }?.map(\.id) ?? []))
+            var section = DocumentSection(id: m.id, speaker: speaker(m), source: m.text, citationIDs: model.citationIDs(for: m))
             if m.role == "assistant", let (threadID, run) = model.run(for: m), let link = ResponseDetailsLink.url(threadID: threadID, runID: run.id) {
                 section.details = link
                 if let summary = model.thoughtSummary(for: run) {
@@ -333,7 +276,7 @@ struct ContentView: View {
                 Button("View in Home") { model.navigate("home") }.help("Open Home. The original messages stay there.")
             }
             if page.lowerBound > 0 { Button("Earlier") { pageEndID = messages[page.lowerBound - 1].id }.help("Read the previous page of messages") }
-            if pageEndID != nil { Button("Newer") { let end = HistoryPage.nextEnd(byteCounts: messages.map { $0.text.utf8.count }, startingAt: page.upperBound); pageEndID = end == messages.count ? nil : messages[end - 1].id }.help("Read the next page of messages") }
+            if pageEndID != nil { Button("Newer") { let end = HistoryPage.nextEnd(byteCounts: model.conversationByteCounts, startingAt: page.upperBound); pageEndID = end == messages.count ? nil : messages[end - 1].id }.help("Read the next page of messages") }
             if page.count < messages.count { Text("\(page.lowerBound + 1)–\(page.upperBound) of \(messages.count)").font(.caption).foregroundStyle(secondaryInk).help("Find and selection apply to this page. Export includes the full conversation.") }
             Spacer()
             if let runs = model.thread?.savedRuns, !runs.isEmpty {
@@ -472,7 +415,7 @@ struct ContentView: View {
                         Button(model.thread?.run?.state == .stopping ? "Stopping…" : model.thread?.run?.state == .queued ? "Cancel" : model.thread?.run?.state == .needsYou ? "Cancel review" : "Stop", action: model.stop)
                             .disabled(model.thread?.run?.state == .stopping).accessibilityIdentifier("stop-response").help(model.thread?.run?.state == .queued ? "Remove this message from the queue" : model.thread?.run?.state == .needsYou ? "Cancel this review. Nothing waiting for review is saved or written" : "Stop the current response and further tool actions")
                     } else {
-                        Button(action: model.send) { Label(otherThreadWorking ? "Queue" : "Send", systemImage: "arrow.up") }.buttonStyle(.borderedProminent)
+                        Button(action: model.send) { Label(model.otherThreadWorking ? "Queue" : "Send", systemImage: "arrow.up") }.buttonStyle(.borderedProminent)
                             .disabled(!model.composer.canSend || model.attaching || model.aiPaused).accessibilityIdentifier("send-message").help(sendHelp).accessibilityHint(sendHelp)
                     }
                 }.padding(10)
@@ -503,9 +446,8 @@ struct ContentView: View {
         if model.attaching { return "Wait for the attached source to finish preparing" }
         if model.composer.issue != nil { return "Resolve the draft issue before sending" }
         if !model.composer.canSend { return "Write a message to send it (Return)" }
-        return otherThreadWorking ? "Queue this message after the current response (Return)" : "Send message (Return)"
+        return model.otherThreadWorking ? "Queue this message after the current response (Return)" : "Send message (Return)"
     }
-    private var otherThreadWorking: Bool { model.snapshot?.home.threads.contains { $0.id != model.selectedID && $0.run?.state.terminal == false && $0.run?.state != .needsYou } ?? false }
     private var composerHint: some View {
         Text(model.composer.issue != nil ? "Draft needs attention." : model.submitting ? "Sending…" : !model.draftSaved ? "Saving draft…" : !model.notice.isEmpty ? model.notice : model.busy && !model.draft.isEmpty ? "Finish or stop this response to send." : model.thread?.mode == .incognito ? "Discarded when you close this thread." : model.thinkingEnabled && !model.busy ? thinkingHint : "Local on this Mac.").foregroundStyle(secondaryInk)
     }
@@ -563,7 +505,7 @@ struct ContentView: View {
                         Text("Conversations and inference stay local. No account, app analytics or automatic reports.").foregroundStyle(secondaryInk)
                     }
                 case .model:
-                    PerformanceSettings(model: model)
+                    PerformanceSettings(model: model, performance: model.performanceState)
                     Section("Model files") {
                         if let setup = model.setupStatus {
                             Text(setup.phase).font(.headline)
@@ -653,13 +595,13 @@ struct ContentView: View {
             ScrollViewReader { proxy in
               ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    let results = searchResults
+                    let results = model.searchResults
                     if results.isEmpty { emptyState("No matching threads", detail: "Try a different word or a shorter phrase.") }
                     ForEach(results) { t in
                         Button { model.navigate(t.id) } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(t.title).font(.headline).lineLimit(2)
-                                Text(t.mode.title + " · " + lifecycleTitle(t.lifecycle)).font(.caption).foregroundStyle(secondaryInk)
+                                Text(t.mode.title + " · " + t.lifecycle.title).font(.caption).foregroundStyle(secondaryInk)
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
                         }.buttonStyle(RailButton(selected: selectedSearchID == t.id)).id(t.id)
                             .accessibilityAddTraits(selectedSearchID == t.id ? .isSelected : [])
@@ -668,8 +610,8 @@ struct ContentView: View {
               }.onChange(of: selectedSearchID) { _, id in if let id { proxy.scrollTo(id) } }
             }
         }.padding(.vertical, 24).readingColumn()
-            .onAppear { selectedSearchID = searchResults.first?.id; searchFocused = false; DispatchQueue.main.async { searchFocused = true } }
-            .onChange(of: model.query) { _, _ in selectedSearchID = searchResults.first?.id }
+            .onAppear { selectedSearchID = model.searchResults.first?.id; searchFocused = false; DispatchQueue.main.async { searchFocused = true } }
+            .onChange(of: model.searchResults) { _, results in selectedSearchID = results.first?.id }
     }
     private func moveSearchWithKeyboard(_ offset: Int) -> KeyPress.Result {
         // The input method owns arrow keys while composing marked text.
@@ -678,22 +620,14 @@ struct ContentView: View {
         return .handled
     }
     private func moveSearchSelection(_ offset: Int) {
-        let results = searchResults
+        let results = model.searchResults
         guard !results.isEmpty else { selectedSearchID = nil; return }
         let current = results.firstIndex { $0.id == selectedSearchID } ?? (offset > 0 ? -1 : results.count)
         selectedSearchID = results[min(results.count - 1, max(0, current + offset))].id
     }
     private func openSearchSelection() {
-        guard let result = searchResults.first(where: { $0.id == selectedSearchID }) ?? searchResults.first else { return }
+        guard let result = model.searchResults.first(where: { $0.id == selectedSearchID }) ?? model.searchResults.first else { return }
         model.navigate(result.id)
-    }
-    private var searchResults: [WorkThread] {
-        let forgotten = Set(model.snapshot?.home.memories.filter(\.forgotten).map(\.messageID) ?? [])
-        return (model.snapshot?.home.threads ?? []).filter { t in
-            let history = model.snapshot?.home.conversationMessages(for: t) ?? t.messages
-            let suppressed = history.contains { forgotten.contains($0.id) }
-            return t.mode != .incognito && (model.query.isEmpty || (!suppressed && t.title.localizedCaseInsensitiveContains(model.query)) || history.contains { !forgotten.contains($0.id) && $0.text.localizedCaseInsensitiveContains(model.query) })
-        }
     }
     private var needsYou: some View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
@@ -850,9 +784,8 @@ struct ContentView: View {
     private func emptyState(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); Text(detail).foregroundStyle(secondaryInk).fixedSize(horizontal: false, vertical: true) }.padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
     }
-    private func lifecycleTitle(_ value: ThreadLifecycle) -> String { switch value { case .open: return "Open"; case .needsYou: return "Needs you"; case .done: return "Done"; case .archived: return "Archived" } }
 }
-private struct RailButton: ButtonStyle {
+struct RailButton: ButtonStyle {
     var selected: Bool
     @Environment(\.controlActiveState) private var activeState
     @State private var hovered = false
@@ -878,12 +811,13 @@ extension Notification.Name {
 
 struct PerformanceSettings: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var performance: PerformanceState
     @State private var limitGB = 10.0
     @State private var limitText = "10"
     @State private var limitError: String?
     @State private var showMemoryDetails = false
     @FocusState private var editingNumber: Bool
-    private var status: PerformanceSnapshot? { model.snapshot?.performance }
+    private var status: PerformanceSnapshot? { performance.snapshot }
     private var maximum: Double { max(PerformancePolicy.minimumGB, status?.maximumGB ?? PerformancePolicy.minimumGB) }
     private func gb(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...1))) + " GB" }
     private func updateLimit() {
@@ -965,9 +899,9 @@ struct PerformanceSettings: View {
             })) {
                 Text("Automatic").tag(PerformancePreferences.Readiness.automatic)
                 Text("While app is open").tag(PerformancePreferences.Readiness.keepReady)
-            }.disabled(status == nil).help("Choose whether to unload after idle time or keep the model ready while the app is open")
+            }.disabled(status == nil).help("Automatic keeps the model ready while you use Sevra and releases it after idle time in the background")
             Text(model.performancePreferences.readiness == .automatic
-                 ? "Releases memory after about \(status?.idleMinutes ?? 10) idle minutes. The next message reloads the model."
+                 ? "Keeps the model ready while you use Sevra. In the background, releases it after about \(status?.idleMinutes ?? 10) idle minutes. Memory pressure, power saving and sleep can release it sooner."
                  : "Keeps the model ready after your first message for faster follow-ups. Memory pressure and sleep can still release it.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let status {

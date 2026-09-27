@@ -11,8 +11,9 @@ func realCheckIfRequested() async throws -> Bool {
     guard !FileManager.default.fileExists(atPath: home.path) else { throw SevraError.refused("Real checks require a new disposable Home.") }
     let dbmd = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SEVRA_DBMD"] ?? NSHomeDirectory() + "/.dbmd/bin/dbmd")
     let machine = Machine.current()
-    guard (machine.availableGB ?? 0) >= 13 else { throw SevraError.refused("The real check requires the 10 GB plan plus at least 3 GB headroom.") }
-    var runtime: SevraRuntime? = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: LocalInference(memoryGB: 10))
+    let budget = try realCheckBudget()
+    guard (machine.availableGB ?? 0) >= budget + 3 else { throw SevraError.refused("The real check requires the selected plan plus at least 3 GB headroom.") }
+    var runtime: SevraRuntime? = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: LocalInference(memoryGB: budget))
     try await runtime!.attach(threadID: "home", folder: URL(fileURLWithPath: source))
     let prompt = "Read both Cedar pilot documents in the attached folder. Use your source tools, then propose cedar-briefing.md with a short cited briefing: launch date, owners, budget, prerequisites and main risk. Keep it under 150 words."
     let runID = try await runtime!.submit(threadID: "home", text: prompt, nonce: "real-workspace-brief")
@@ -65,10 +66,11 @@ func realThinkingCheckIfRequested() async throws -> Bool {
     guard !FileManager.default.fileExists(atPath: home.path) else { throw SevraError.refused("Real checks require a new disposable Home.") }
     let dbmd = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SEVRA_DBMD"] ?? NSHomeDirectory() + "/.dbmd/bin/dbmd")
     let machine = Machine.current()
-    guard (machine.availableGB ?? 0) >= 13 else { throw SevraError.refused("The real check requires the 10 GB plan plus at least 3 GB headroom.") }
+    let budget = try realCheckBudget()
+    guard (machine.availableGB ?? 0) >= budget + 3 else { throw SevraError.refused("The real check requires the selected plan plus at least 3 GB headroom.") }
     let forcedBudget = Int(option("--budget") ?? "") ?? 96
     let answerAfter = Double(option("--answer-after") ?? "") ?? 8
-    var runtime: SevraRuntime? = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: LocalInference(memoryGB: 10))
+    var runtime: SevraRuntime? = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: LocalInference(memoryGB: budget))
     let thread = try await runtime!.newThread(title: "Thinking")
     try await runtime!.setThinking(threadID: thread, enabled: true)
     var receipts: [[String: Any]] = []

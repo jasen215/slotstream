@@ -90,6 +90,8 @@ public struct PlanRequest: Sendable, Codable, Equatable {
     public var mtp: Planner.MTPMode
     public var vision: Planner.VisionMode
     public var maxContextTokens: Int
+    /// A forced placement for the draft head's experts; nil is automatic.
+    public var mtpExperts: Planner.MTPExpertPlacement? = nil
 
     /// Preserve the original initializer, including its function-value type.
     public init(
@@ -139,6 +141,7 @@ extension Planner {
             workingSetGB: device.workingSetGB, availableGB: device.availableGB,
             ramPercent: request.maxRAMPercent, mtp: request.mtp, mtpAvailable: mtpAvailable,
             vision: request.vision, visionAvailable: visionAvailable,
-            maxContextTokens: request.maxContextTokens, simulated: device.isSimulated)
+            maxContextTokens: request.maxContextTokens, simulated: device.isSimulated,
+            qualification: false, mtpExperts: request.mtpExperts ?? .automatic)
     }
 }

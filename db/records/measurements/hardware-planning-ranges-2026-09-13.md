@@ -2,7 +2,7 @@
 type: measurement
 id: 01m2dtc5nvwg0t0jfr4fra1nx6
 created: 2026-09-13T16:42:28.411325+00:00
-updated: 2026-09-22T19:23:16.041652+00:00
+updated: 2026-09-26T16:03:31+00:00
 summary: Hardware speed planning ranges and inference limits
 date: 2026-09-13
 doc: measurements
@@ -126,3 +126,38 @@ automatic plan of a 32 GB Mac and cannot qualify a release-wide speed ratio.
 The new calibration attempt, retained raw observations, stricter prospective
 host-load screen and remaining gaps are recorded in
 [[records/measurements/release-speed-calibration-2026-09-22]].
+
+## Reports from 36 and 64 GB Macs, 2026-09-24
+
+Three community reports added real Macs to the two middle bands
+([[records/measurements/c4-macbook-pro-m3-max-64gb-community]],
+[[records/measurements/c5-macbook-pro-m4-max-64gb-community]] and
+[[records/measurements/c6-macbook-pro-m4-max-36gb-community]]):
+
+- 24 to less than 48 GB: a 36 GB M4 Max reported 8.41 tok/s on 0.2.22, inside
+  ~6–16 tok/s.
+- 48 to less than 96 GB: a 64 GB M4 Max reported 15.93 tok/s on 0.2.22, and a
+  64 GB M3 Max 12.38 tok/s on 0.2.18, both from internal SSDs with the same
+  auto plan. The M3 Max sits below the ~15 floor. Its report predates 0.2.19,
+  so the floor stays ~15 until a rerun on the current release, with
+  `slotstream pull` run first, says whether the gap is the release or the
+  hardware. C4 records why the release is unlikely to close it: the M4 Max
+  ran the same pre-0.2.19 forecast and still decoded faster. The public range
+  names the M3 Max report beside it.
+- The same M4 Max decoded at 2.98 tok/s from a 10 Gb/s external drive. The
+  ranges assume the model on a fast internal SSD; that result is the slow-SSD
+  case described above, not a band endpoint.
+
+No release-speedup multiplier was applied to the community reports.
+
+## A 24 GB report, 2026-09-26
+
+- 24 to less than 48 GB: a 24 GB M4 Pro reported 3.57 tok/s on 0.2.24
+  ([[records/measurements/c7-macbook-pro-m4-pro-24gb-community]]), below the
+  ~6 floor, and 3.85 to 3.97 tok/s in a later round. Two known differences may
+  account for the gap. Its 512 GB SSD read cold experts at 3.7 GB/s, well below
+  the development Mac's 17.3 GB/s, and the ranges assume a fast internal SSD.
+  And on 0.2.24 a 24 GB plan ran without the draft head and decode lookahead,
+  which 0.2.25 enables at that size. The floor stays ~6 until a rerun on 0.2.25
+  separates the release from the hardware; the public range names the report
+  beside it.

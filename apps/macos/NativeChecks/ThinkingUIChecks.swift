@@ -46,10 +46,8 @@ import SevraPresentation
         let runtime = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: engine)
         let model = AppModel()
         model.runtime = runtime
-        // The same forwarding the app's start() installs, so composer edits re-render the view.
-        let forwarding = [model.composer.objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() },
-                          model.journalComposer.objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() }]
-        defer { withExtendedLifetime(forwarding) {} }
+        // The same composer observation the app's start() installs.
+        model.observeComposers()
         await model.refresh()
         try await model.composer.open("home")
         try await model.journalComposer.open("journal")

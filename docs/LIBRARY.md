@@ -128,6 +128,18 @@ original-file verification; an immediate second `verify()` is unnecessary.
 `status()` reports remaining reconstructed model bytes, not compressed wire
 bytes, and permits an absent optional draft head.
 
+`download` fetches the weights only. The 37.5 MB decode-forecast file that
+`slotstream pull` also fetches is optional and makes decode faster; fetch it
+the same way after the weights. A failure is logged and returns `false`
+instead of throwing:
+
+```swift
+for file in TapCorrectionSidecar.files {
+    TapCorrectionSidecar.ensure(modelDir: store.modelDirectory, file: file,
+                                cancellation: cancellation) { line in print(line) }
+}
+```
+
 <a id="what-will-it-do-on-this-mac"></a>
 
 ## Plan memory
@@ -218,7 +230,10 @@ used first. `maxAge`
 (30 days by default, `nil` to keep states until the quota needs room) removes
 unused states. Opening the directory removes files from other binaries, models
 or settings, expired and damaged files, and anything over the quota;
-`tier.maintenance` reports what it removed.
+`tier.maintenance` reports what it removed. A file the system refuses to read,
+because of its permissions or an I/O error, is kept: opening throws
+`PersistentPrefixCache.UnreadableFile`, which names it, and `slotstream serve`
+then runs without the disk tier.
 
 The prefix conversations share is kept too, with or without the disk tier.
 While a prompt is processed, the head other conversations will start with is

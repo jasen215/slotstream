@@ -129,9 +129,17 @@ public protocol Inference: Sendable {
     /// when the context is nearly full.
     func turn(history: [ChatMessage], tools: [ToolDefinition], thinking: ThinkingRequest?, replyTokens: Int, control: ThinkingControl, cancellation: Cancellation, buffer: TurnBuffer) async throws -> EngineTurn
     func unload() async
+    /// Starts work the first message would otherwise wait for, such as
+    /// checking the model files. Never loads the model.
+    func prepareAhead() async
+    /// Drops everything a private conversation left in memory. Engines that
+    /// cannot do less release the model.
+    func releasePrivateState() async
 }
 public extension Inference {
     func prepareCache(_ context: InferenceCacheContext) async throws {}
+    func prepareAhead() async {}
+    func releasePrivateState() async { await unload() }
     func turn(history: [ChatMessage], tools: [ToolDefinition], thinking: ThinkingRequest?, replyTokens: Int, control: ThinkingControl, cancellation: Cancellation, buffer: TurnBuffer) async throws -> EngineTurn {
         try await turn(history: history, tools: tools, cancellation: cancellation, buffer: buffer)
     }
@@ -169,6 +177,11 @@ public actor LocalInference: Inference {
     private var engine: Engine?
     private var governor: MemoryGovernor?
     private let model: URL
+    private let modelVerification = ModelVerificationCache()
+    /// The file check started ahead of the first message, off the inference
+    /// queue. A turn joins it instead of hashing again.
+    private let ahead = VerificationAhead()
+    private var releasedAt: TimeInterval?
     private var preferences: PerformancePreferences
     private var inTurn = false
     private var cacheContext: InferenceCacheContext?
@@ -233,16 +246,40 @@ public actor LocalInference: Inference {
         if engine == nil {
             performanceTelemetry?.update(state: "Loading", detail: "Preparing the local model.")
             buffer.stage("Verifying the local model")
+            // Join the check started ahead; Stop still ends the wait. The
+            // proof it leaves belongs to this owner, as one made here would.
+            while ahead.running {
+                try cancellation.check()
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
             let store = WeightStore(modelDirectory: model)
-            let status: WeightStatus
-            do { status = try store.status(shouldContinue: { !cancellation.isCancelled }) }
+            let verified: Bool
+            do {
+                verified = try modelVerification.check(files: PinnedModel.files.map { model.appendingPathComponent($0.path) },
+                    shouldContinue: { !cancellation.isCancelled }) {
+                        try store.status(shouldContinue: { !cancellation.isCancelled }).isReady
+                    }
+            }
             catch { try cancellation.check(); throw error }
-            guard status.isReady else { throw SevraError.unavailable("The local model is missing or incomplete. Set up the model before sending.") }
+            guard verified else { throw SevraError.unavailable("The local model is missing or incomplete. Set up the model before sending.") }
             try cancellation.check()
+            // XNU caches host_statistics64 for a one-second window. A fast
+            // verified reload can otherwise size against our already-freed
+            // model, disable MTP and invalidate compatible disk checkpoints.
+            // Wait only for the remainder of that window; never invent credit
+            // for released bytes or override the real availability guard.
+            if let releasedAt {
+                let remaining = PerformancePolicy.memoryObservationDelay - (ProcessInfo.processInfo.systemUptime - releasedAt)
+                if remaining > 0 { try await Task.sleep(nanoseconds: UInt64(remaining * 1e9)) }
+                try cancellation.check()
+            }
             let machine = Machine.current()
-            let plan = try PerformancePolicy.plan(preferences, on: machine)
+            let plan = try PerformancePolicy.plan(preferences, on: machine, mtpAvailable: MTPWeights.present(modelDir: model),
+                decodeLookahead: .environment(modelDirectory: model))
             buffer.stage("Loading the local model")
             engine = try await Engine(modelDir: model, plan: plan)
+            try engine?.configureShortPromptPrefill(maxPromptTokens: PerformancePolicy.shortPromptTokens,
+                chunk: PerformancePolicy.shortPromptChunk)
             configurePersistentCache()
             if let engine {
                 governor = MemoryGovernor(engine: engine)
@@ -371,8 +408,42 @@ public actor LocalInference: Inference {
         try turn.validateCompletion()
         return turn
     }
-    public func unload() async {
+    /// Checks the pinned model files now, so the first message after launch
+    /// does not wait for the whole hash. It runs at utility priority, reads
+    /// in bounded chunks and loads nothing. Skipped in Low Power Mode, when
+    /// the model is loaded, or when the files are not all present.
+    public func prepareAhead() async {
+        guard engine == nil, !inTurn, !ProcessInfo.processInfo.isLowPowerModeEnabled,
+              WeightStore.remainingBytes(at: model) == 0, ahead.begin() else { return }
+        let cache = modelVerification, model = model, ahead = ahead
+        let files = PinnedModel.files.map { model.appendingPathComponent($0.path) }
+        DispatchQueue.global(qos: .utility).async {
+            let store = WeightStore(modelDirectory: model)
+            _ = try? cache.check(files: files, shouldContinue: { !ahead.cancelled }) {
+                try store.status(shouldContinue: { !ahead.cancelled }).isReady
+            }
+            ahead.end()
+        }
+    }
+    /// After a private reply: the conversation's prompt state and the
+    /// allocator's reusable buffers go; the weights stay loaded, so the next
+    /// reply does not reload the model. Nothing private was written to disk.
+    public func releasePrivateState() async {
         while inTurn { try? await Task.sleep(nanoseconds: 20_000_000) }
+        guard let engine else { return }
+        engine.disablePersistentPrefixCache()
+        engine.dropPrefixCache()
+        engine.withExclusive { Engine.releaseUnusedMemory() }
+        persistentCacheActive = false
+        privateWorkingState = false
+        // The next turn sets up its own context from scratch.
+        cacheContext = nil
+    }
+    public func unload() async {
+        // A check running ahead stops; model setup may be changing the files.
+        ahead.cancel()
+        while inTurn { try? await Task.sleep(nanoseconds: 20_000_000) }
+        let wasLoaded = engine != nil
         performanceTelemetry?.update(state: "Releasing memory", detail: "Returning model memory to your Mac.")
         await governor?.stopAndWait(); governor = nil
         autoreleasepool {
@@ -381,8 +452,21 @@ public actor LocalInference: Inference {
             privateWorkingState = false
             Engine.releaseUnusedMemory()
         }
+        if wasLoaded { releasedAt = ProcessInfo.processInfo.systemUptime }
         performanceTelemetry?.update(state: "Model not loaded", detail: "Loads when you send a message.")
     }
+}
+
+/// A file check running ahead of the first message. At most one runs.
+final class VerificationAhead: @unchecked Sendable {
+    private let lock = NSLock()
+    private var state = (running: false, cancelled: false)
+    var running: Bool { lock.withLock { state.running } }
+    var cancelled: Bool { lock.withLock { state.cancelled } }
+    /// False when a check is already running.
+    func begin() -> Bool { lock.withLock { guard !state.running else { return false }; state = (true, false); return true } }
+    func end() { lock.withLock { state.running = false } }
+    func cancel() { lock.withLock { if state.running { state.cancelled = true } } }
 }
 
 /// Explicit test dependency. Production never silently falls back to it.

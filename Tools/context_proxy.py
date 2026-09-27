@@ -44,7 +44,8 @@ def selected_sources():
     paths += ['Sources/Slotstream/PrefixCache.swift', 'Sources/Slotstream/PlannerDevice.swift',
               'Tools/context_proxy.py', 'Tools/context_proxy.swift',
               'Tools/fixtures/context-default-v1.json', 'Tools/fixtures/context-default-v2.json',
-              'Tools/fixtures/context-automatic-v1.json']
+              'Tools/fixtures/context-default-v3.json',
+              'Tools/fixtures/context-automatic-v1.json', 'Tools/fixtures/context-automatic-v2.json']
     return {p: sha(ROOT / p) for p in sorted(paths)}
 
 
@@ -95,7 +96,7 @@ def run(out, swiftc=None):
             report['compiler_exit'] = build.returncode
             if build.returncode:
                 raise ValueError('isolated source contract compilation failed')
-            result = subprocess.run([str(temp / 'contracts'), str(ROOT / 'Tools/fixtures/context-default-v1.json')],
+            result = subprocess.run([str(temp / 'contracts'), str(ROOT / 'Tools/fixtures/context-default-v3.json')],
                                     env=env, capture_output=True, text=True, timeout=120)
             (out / 'contracts.stdout.json').write_text(result.stdout)
             (out / 'contracts.stderr.txt').write_text(result.stderr)

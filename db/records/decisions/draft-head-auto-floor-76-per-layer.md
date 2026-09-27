@@ -2,13 +2,13 @@
 type: decision
 id: 01m2dg99ybq5zxr3qp1pvejh22
 created: 2026-09-13T13:46:08.715419+00:00
-updated: 2026-09-13T13:46:08.715419+00:00
+updated: 2026-09-24T19:15:55.659578+00:00
 summary: Auto enables the draft head when the cache keeps 76 experts per layer after its charge, a 21 GB target, so 32 GB Macs and up; the former floor was 120
 decided_on: 2026-09-13
 evidence: '[[records/measurements/mtp-depth-auto40-multitasking-2026-09-11]]'
 reversible_if: Clean paired measurements show two drafts slower than plain decode at a cache between 76 and 120 experts per layer, or a slower SSD measures a loss there
 title: The draft head's automatic floor is 76 experts per layer
-status: standing
+status: reversed
 ---
 Carlos asked to ship the decode lookahead as the default and delegated which Macs get it ("make your best guess"). The lookahead needs the draft head, and under the former 120-experts-per-layer floor auto turned the head on only from a 28 GB target, which only 48 GB Macs and up reach. This lowers the floor to where the head was measured faster.
 
@@ -19,3 +19,5 @@ Carlos asked to ship the decode lookahead as the default and delegated which Mac
 **What it replaces.** The activation floor in [[records/decisions/draft-depth-defaults-to-one-and-auto-floor-120-per-layer]], which [[records/decisions/draft-depth-defaults-to-two]] kept at 120. Draft depth stays two, the RAM share stays 70% and the ceiling stays 33 GB, 34.6 GB with the head.
 
 **Limits.** The 76-per-layer evidence is small-sample and short-context, on one M5 Pro; slower SSDs, where each miss costs more, are unmeasured. `--mtp off` restores plain decode.
+
+**Addendum (2026-09-24).** [[records/decisions/draft-head-streams-its-experts-below-76-per-layer]] replaces this floor. Below 76 experts per layer after the head's full 1.6 GB charge, the head's 512 experts now stream through a 64-expert cache of their own, and automatic mode enables the head from 28 experts per layer after that smaller charge. 76 now marks where the experts stay resident. The measurements above keep their configurations.

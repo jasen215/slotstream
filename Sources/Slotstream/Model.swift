@@ -104,6 +104,7 @@ public final class Qwen4ExpModel {
         pool.contiguousSlotWrites = optimizations.contiguousSlotWrites
         pool.wordSlotWrites = optimizations.wordSlotWrites
         pool.cpuSlotWrites = optimizations.cpuSlotWrites
+        pool.directDemandReads = optimizations.directDemandReads == true
         pool.layerLocalFloorEviction = optimizations.layerLocalFloorCache
         if routerCacheConfigured != optimizations.cachedRouterWeights {
             for layer in moe.values { layer.routerProjection.configure(cached: optimizations.cachedRouterWeights) }
@@ -274,8 +275,17 @@ public final class Qwen4ExpModel {
     /// Load the MTP draft head (1.5 GB resident). Idempotent; throws when
     /// mtp.safetensors is absent.
     public func enableMTP(modelDir: URL) throws {
+        try enableMTP(modelDir: modelDir, streamedExperts: false)
+    }
+
+    /// `streamedExperts` loads the head without its routed experts, which
+    /// then stream through a `PlannerCostModel.mtpStreamSlots` cache.
+    public func enableMTP(modelDir: URL, streamedExperts: Bool) throws {
         guard mtpHead == nil else { return }
-        mtpHead = MTPHead(try MTPWeights(modelDir: modelDir, config: cfg))
+        let weights = try MTPWeights(modelDir: modelDir, config: cfg, streamedExperts: streamedExperts)
+        let stream = try streamedExperts ? MTPExpertStream(url: weights.url, base: "mtp.layers.0.mlp",
+            expertCount: cfg.numExperts, topK: cfg.topK, slots: PlannerCostModel.mtpStreamSlots) : nil
+        mtpHead = MTPHead(weights, stream: stream)
     }
 
     /// Conservative capacity needed before a request grows its sequence

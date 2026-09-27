@@ -41,6 +41,18 @@ public enum PerformancePolicy {
     /// and one fewer cached expert per layer (doctor, September 17, 2026).
     /// Documents, file changes and apps need the room.
     public static let contextTokens = 32768
+    /// Short chats need stable intermediate checkpoints before the next turn.
+    /// Keep 512-token compute passes below 1,536 prompt tokens; longer inputs
+    /// retain the engine's throughput schedule. Keep its workspace reservation
+    /// so read sharing and pressure recovery still have room. These are measured
+    /// Desktop operating choices, not numerical limits or CLI policy.
+    /// Rationale and revision gate: db/records/decisions/sevra-app-speed-defaults-2026-09-23.md.
+    public static let shortPromptTokens = 1536
+    public static let shortPromptChunk = 512
+    /// Seconds after releasing the model before another allocation plan. XNU's
+    /// host-statistics cache lasts one second; a small margin avoids its edge.
+    /// Only immediate reloads wait, and always use a new real reading afterward.
+    public static let memoryObservationDelay: TimeInterval = 1.05
     // Round the engine floor UP to a half GB for an accessible native control.
     public static let minimumGB = ceil(Planner.minMemoryGB * 2) / 2
     public static func maximumGB(on machine: Machine) -> Double {
@@ -57,6 +69,10 @@ public enum PerformancePolicy {
         }
     }
     public static func plan(_ preferences: PerformancePreferences, on machine: Machine) throws -> MemoryPlan {
+        try plan(preferences, on: machine, mtpAvailable: MTPWeights.present(modelDir: WeightStore.default.modelDirectory))
+    }
+    public static func plan(_ preferences: PerformancePreferences, on machine: Machine, mtpAvailable: Bool,
+                            decodeLookahead: DecodeLookaheadPlanning = .automatic) throws -> MemoryPlan {
         try validate(preferences, on: machine)
         guard let available = machine.availableGB, available.isFinite, available > 0,
               machine.ramGB.isFinite, machine.ramGB > 0, machine.workingSetGB.isFinite else {
@@ -64,11 +80,18 @@ public enum PerformancePolicy {
         }
         // Preserve the selected ceiling independently of the budget available
         // now, so pressure recovery does not fall back to the automatic default.
-        let ceiling = preferences.budget == .custom ? preferences.customGB : nil
+        // Desktop's displayed ceiling includes the draft head. The independent
+        // CLI may lift its automatic model ceiling by MTP's resident cost; an
+        // explicit adaptive ceiling keeps this app's total budget unchanged.
+        let ceiling = preferences.budget == .custom ? preferences.customGB : Planner.usefulCeilingGB
         let plan: MemoryPlan
         do {
-            plan = try Planner.plan(PlanRequest(memoryLimitGB: ceiling, mtp: .off, vision: .off,
-                                                maxContextTokens: contextTokens), on: machine)
+            // Use the engine's qualified automatic MTP and lookahead policy.
+            // The head is optional and its full cost must fit before enabling it.
+            plan = try Planner.plan(expertsPerLayer: nil, poolGB: nil, memoryGB: nil, memoryLimitGB: ceiling,
+                ramGB: machine.ramGB, workingSetGB: machine.workingSetGB, availableGB: available,
+                mtp: .auto, mtpAvailable: mtpAvailable, vision: .off, maxContextTokens: contextTokens,
+                simulated: machine.isSimulated, qualification: false, decodeLookahead: decodeLookahead)
         } catch {
             throw SevraError.refused("There isn’t enough memory available for this model. Close a large app and try again. Your conversation is preserved.")
         }
@@ -92,8 +115,11 @@ public enum PerformancePolicy {
     }
     public static func shouldRelease(idleSeconds: Double, preparationSeconds: Double,
                                      preferences: PerformancePreferences, pressure: Bool,
-                                     conservingPower: Bool) -> Bool {
-        pressure || (preferences.readiness == .automatic && idleSeconds >= idleDelay(
+                                     conservingPower: Bool, userPresent: Bool = false) -> Bool {
+        // Reading an answer or composing the next message is still active use.
+        // Keep a loaded model while the app is foreground, unless the Mac needs
+        // memory or is conserving power. Never load a model solely for readiness.
+        pressure || (preferences.readiness == .automatic && (!userPresent || conservingPower) && idleSeconds >= idleDelay(
             preparationSeconds: preparationSeconds, conservingPower: conservingPower))
     }
 }

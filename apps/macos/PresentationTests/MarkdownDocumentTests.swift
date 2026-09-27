@@ -107,6 +107,57 @@ final class MarkdownDocumentTests {
         let copy = (code.text.string as NSString).range(of: "Copy code")
         checkEqual(code.text.attribute(.underlineStyle, at: copy.location, effectiveRange: nil) as? Int, NSUnderlineStyle.single.rawValue)
     }
+    /// A streaming reply replaces only its changed paragraphs, even with emoji
+    /// and tables earlier on the page; a page that drops its first message
+    /// replaces everything.
+    func testStreamingKeepsUnchangedText() {
+        let renderer = MarkdownDocumentRenderer(), style = DocumentStyle()
+        let emoji = DocumentSection(id: "a", speaker: "You", source: "Plans for the trip 👩🏽‍💻 🇨🇴 café")
+        let table = DocumentSection(id: "b", speaker: "Sevra", source: "| City | Days |\n| --- | ---: |\n| Popayán | 3 |\n")
+        var reply = DocumentSection(id: "c", speaker: "Sevra", source: "First paragraph stays.\n\nSecond grows")
+        let first = renderer.render([emoji, table, reply], style: style)
+        reply.source += " with more words"
+        let second = renderer.render([emoji, table, reply], style: style)
+        let kept = RenderedDocument.unchangedPrefix(from: first, to: second, displayedLength: first.text.length)
+        let replyStart = first.spans[0].length + first.spans[1].length
+        let secondParagraph = (second.text.string as NSString).range(of: "Second grows").location
+        checkEqual(kept, secondParagraph)
+        checkGreater(kept, replyStart)
+        checkTrue(second.text.attributedSubstring(from: NSRange(location: 0, length: kept)).isEqual(to: first.text.attributedSubstring(from: NSRange(location: 0, length: kept))))
+        // Unchanged sections are reused, not re-rendered.
+        checkTrue(first.spans[0] == second.spans[0] && first.spans[1] == second.spans[1])
+        checkFalse(first.spans[2] == second.spans[2])
+        // A page that starts one message later shares nothing at the front.
+        let shifted = renderer.render([table, reply], style: style)
+        checkEqual(RenderedDocument.unchangedPrefix(from: second, to: shifted, displayedLength: second.text.length), 0)
+        // Nothing known on screen, or a view whose text differs, keeps nothing.
+        checkEqual(RenderedDocument.unchangedPrefix(from: nil, to: second, displayedLength: 0), 0)
+        checkEqual(RenderedDocument.unchangedPrefix(from: first, to: second, displayedLength: first.text.length + 1), 0)
+        // An identical render keeps everything.
+        let same = renderer.render([emoji, table, reply], style: style)
+        checkEqual(RenderedDocument.unchangedPrefix(from: second, to: same, displayedLength: second.text.length), second.text.length)
+    }
+    /// New messages extend the latest page instead of shifting its start,
+    /// until it holds half again its bounds, or twice them while reading earlier.
+    func testLatestPageKeepsItsStart() {
+        let page = LatestPage()
+        var ids = (0..<100).map { "m\($0)" }, counts = Array(repeating: 100, count: 100)
+        checkEqual(page.range(ids: ids, byteCounts: counts, threadID: "t"), 20..<100)
+        for n in 100..<140 { ids.append("m\(n)"); counts.append(100) }
+        checkEqual(page.range(ids: ids, byteCounts: counts, threadID: "t"), 20..<140)
+        ids.append("m140"); counts.append(100)
+        checkEqual(page.range(ids: ids, byteCounts: counts, threadID: "t"), 61..<141)
+        for n in 141..<180 { ids.append("m\(n)"); counts.append(100) }
+        checkEqual(page.range(ids: ids, byteCounts: counts, threadID: "t", readingEarlier: true), 61..<180)
+        checkEqual(page.range(ids: ids, byteCounts: counts, threadID: "other"), 100..<180)
+        // A page over its byte bound moves on at once.
+        let large = LatestPage()
+        var big = Array(repeating: 10_000, count: 100)
+        let first = large.range(ids: ids.prefix(100).map { $0 }, byteCounts: big, threadID: "t")
+        big += Array(repeating: 200_000, count: 5)
+        checkEqual(large.range(ids: ids.prefix(105).map { $0 }, byteCounts: big, threadID: "t"), HistoryPage.range(byteCounts: big, endingAt: nil))
+        checkEqual(first, HistoryPage.range(byteCounts: Array(big.prefix(100)), endingAt: nil))
+    }
     func testBoundedHistoryRenderSamples() {
         let renderer = MarkdownDocumentRenderer()
         let source = "## Update\n\nA **clear** paragraph with a [source](https://example.com).\n\n- Read\n- Review\n- Save\n\n```swift\nlet value = 42\n```\n"
@@ -141,8 +192,10 @@ func checkGreater<T: Comparable>(_ a: T, _ b: T, file: String = #file, line: Int
         checks.testSourceCoordinatesAndSourceModePreserveUnicode()
         checks.testMalformedAndBoundedDocumentsPreserveReadableSource()
         checks.testAnnotationsStayOutsideTheMessage()
+        checks.testStreamingKeepsUnchangedText()
+        checks.testLatestPageKeepsItsStart()
         checks.testBoundedHistoryRenderSamples()
-        print(failures == 0 ? "PASS: native Markdown structure, exact code, table attributes, inert HTML/images, link/citation boundaries, Unicode source coordinates, late references, cache reuse, limits and message annotations" : "Presentation checks failed: \(failures)")
+        print(failures == 0 ? "PASS: native Markdown structure, exact code, table attributes, inert HTML/images, link/citation boundaries, Unicode source coordinates, late references, cache reuse, limits, message annotations and streaming replacement bounds" : "Presentation checks failed: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
 }

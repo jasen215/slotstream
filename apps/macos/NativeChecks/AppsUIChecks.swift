@@ -346,8 +346,8 @@ final class RecordingBroker: @unchecked Sendable {
         """
         let dbmd = URL(fileURLWithPath: env["SEVRA_DBMD"] ?? NSHomeDirectory() + "/.dbmd/bin/dbmd")
         let engine = ScriptedInference(turns: [
-            EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["id": .string("file-1")])]),
-            EngineTurn(text: "", calls: [ProposedTool(name: "file.edit", arguments: ["id": .string("file-1"), "old": .string("Status: draft"), "new": .string("Status: approved")])]),
+            EngineTurn(text: "", calls: [ProposedTool(name: "source.read", arguments: ["path": .string("plan.md")])]),
+            EngineTurn(text: "", calls: [ProposedTool(name: "file.edit", arguments: ["id": .string("a1:plan.md"), "old": .string("Status: draft"), "new": .string("Status: approved")])]),
             EngineTurn(text: "I marked the plan approved. Review the change before it is written."),
             EngineTurn(text: "Here is a habit tracker.", calls: [ProposedTool(name: "app.propose", arguments: ["name": .string("Habits"), "description": .string("Track daily habits."),
                                                                                                           "data": .string("habits:write"), "html": .string(app)])]),
@@ -360,9 +360,8 @@ final class RecordingBroker: @unchecked Sendable {
         let runtime = try SevraRuntime(homeURL: home, dbmd: dbmd, inference: engine, helper: helper)
         let model = AppModel()
         model.runtime = runtime
-        let forwarding = [model.composer.objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() },
-                          model.journalComposer.objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() }]
-        defer { withExtendedLifetime(forwarding) {} }
+        // The same composer observation the app's start() installs.
+        model.observeComposers()
         await model.refresh()
         try await model.composer.open("home")
         try await model.journalComposer.open("journal")

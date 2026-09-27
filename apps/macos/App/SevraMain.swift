@@ -98,13 +98,15 @@ import SevraRuntime
         if menuItem.action == #selector(responseDetails(_:)) { return model.panel.isEmpty && model.thread?.run != nil && model.details.anchor("status") != nil }
         if menuItem.action == #selector(newThread(_:)) || menuItem.action == #selector(incognito(_:)) { return model.composer.ready && !model.composer.transitioning }
         if menuItem.action == #selector(find(_:)) { return findTarget != nil }
-        if menuItem.action == #selector(jumpLatest(_:)) { return (model.panel.isEmpty || model.panel == "Artifact") && model.textSession.conversation?.window != nil }
+        if menuItem.action == #selector(jumpLatest(_:)) { return (model.panel.isEmpty || model.panel == "Artifact") && model.textSession.visibleConversation != nil }
         return true
     }
     private var findTarget: DocumentTextView? {
         let current = window.firstResponder as? DocumentTextView
         let view = current ?? (model.panel == "Artifact" ? model.textSession.artifact : model.textSession.conversation)
-        return view?.window != nil ? view : nil
+        // The conversation stays in the window, hidden, under a panel.
+        guard let view, view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return nil }
+        return view
     }
     @objc func find(_ sender: Any?) { findTarget?.findDocument() }
     private func buildMenus() {
