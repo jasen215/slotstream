@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/runs
-updated: 2026-09-27T02:38:30.843960Z
+updated: 2026-09-27T03:20:34.268780Z
 ---
 
 # sources/runs
 
+- [[sources/runs/2026/09/2026-09-26-disk-prefix-admission-recalibration]] — The rule now credits a saving at 5.80 ms per row, the cheapest re-read measured where the model did not fit, instead of 0.42 ms on a fully resident pool; all three gates pass
 - [[sources/runs/2026/09/2026-09-26-disk-prefix-step4-paired-ab]] — Paired A/B over 3 rounds and 24 turns: aggregate 1.5988 (steady state 1.5006) with a bootstrap 2.5th percentile of 1.4865, restart turns 3.44-3.72x, identical ids, and every registered exit met
 - [[sources/runs/2026/09/2026-09-26-disk-prefix-step2-admission]] — The tier now reads a longer state only when it removes a pass of reading or saves rows that pay for its own restore; the equivalence gate, the T0 policy check and the corrected e2e suite all pass
 - [[sources/runs/2026/09/2026-09-26-disk-prefix-step1-fit]] — restoreSeconds = 21.3 ms + 3.95 ms per 1000 restored tokens (n=9, r2=0.954); the re-read arm's per-token fit fails (n=19, r2=0.012) because its cost unit is one 256-row pass
@@ -506,9 +507,8 @@ updated: 2026-09-27T02:38:30.843960Z
 - [[sources/runs/2026/09/2026-09-06-optimization-ngram-compile-correction]] — N-gram diagnostic compile failure and unchanged-fixture correction — V185–186
 - [[sources/runs/2026/09/2026-09-06-configurable-context-complete-prompt-epoch-pass]] — Complete prompt MTP and vision reuse passes with one arithmetic epoch
 - [[sources/runs/2026/09/2026-09-06-configurable-context-external-swift-consumer-pass]] — External Swift consumer preserves original APIs and passes the strict compiler gate
-- [[sources/runs/2026/09/2026-09-06-configurable-context-actual-65k-client-pass]] — Actual Hermes Ollama and published AI SDK gateway clients pass the65K contract
 
 ## More
 
-This folder has 691 files. The 500 most recent are listed above.
+This folder has 692 files. The 500 most recent are listed above.
 Use `dbmd query --type run --in sources` for the complete catalog.

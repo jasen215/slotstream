@@ -114,9 +114,10 @@ extension Diagnostics {
             PrefillSchedule.automaticScopeChoices(remaining: 3600, at: 0, maxChunk: 256, checkpoint: 2816)?.first,
             Array(repeating: 256, count: 11))
 
-        // Admission (order 344 step 2, pre-registration rev 3): a longer state
+        // Admission (order 344 step 2, pre-registration rev 4): a longer state
         // is read only when it removes a pass of reading, or when the rows it
-        // saves pay for its own restore at the cheapest re-read cost measured.
+        // saves pay for its own restore at the cheapest re-read measured in a
+        // configuration where the model did not fit in memory.
         typealias Admission = PersistentPrefixAdmission
         c.expect("a state that removes a pass of reading is taken even when it saves fewer rows than a pass",
             Admission.takesDiskState(memoryHeld: 4000, diskHolds: 4096, prompt: 5120, chunk: 256, tailAware: false))
@@ -128,7 +129,7 @@ extension Diagnostics {
                 && Admission.passes(from: 4208, to: 5120, chunk: 256, tailAware: false)
                     == Admission.passes(from: 4096, to: 5120, chunk: 256, tailAware: false))
         c.expect("a state that saves too little and removes no pass is refused",
-            !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4150, prompt: 5120, chunk: 256, tailAware: false))
+            !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4100, prompt: 5120, chunk: 256, tailAware: false))
         c.expect("a state that is not longer is refused",
             !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4096, prompt: 5120, chunk: 256, tailAware: false)
                 && !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 3968, prompt: 5120, chunk: 256,

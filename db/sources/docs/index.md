@@ -2,13 +2,14 @@
 type: index
 scope: type-folder
 folder: sources/docs
-updated: 2026-09-26T13:24:21.115913Z
+updated: 2026-09-27T02:38:58.252786Z
 ---
 
 # sources/docs
 
-- [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev2]] — Pre-registration rev2: order 344 step 2, admission by a saved pass of rows
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev3]] — Pre-registration rev3: order 344 step 2, admission on two wins
+- [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev4]] — Pre-registration rev4: the admission rule's read rate recalibrated to the target configuration
+- [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev2]] — Pre-registration rev2: order 344 step 2, admission by a saved pass of rows
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration]] — Pre-registration: order 344 step 2, admission by pass count
 - [[sources/docs/2026/09/2026-09-26-tree-verification-gdn-hybrid-preregistration-rev2]] — Pre-registration for order 343: tree verification for the GDN hybrid, frozen 2026-09-26 (rev 2)
 - [[sources/docs/2026/09/2026-09-26-tree-verification-gdn-hybrid-preregistration-rev3]] — Pre-registration for order 343: tree verification for the GDN hybrid, frozen 2026-09-26 (rev 3)

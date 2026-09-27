@@ -2184,3 +2184,6 @@ step 2 rewritten and done: admission on two wins (a removed pass, or saved rows 
 ## [2026-09-27 02:38] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 step 4 done: paired A/B aggregate 1.5988 (steady state 1.5006, bootstrap lower 1.4865), every registered exit met, identical ids; the disk tier wins by skipping the cold start, the admission rule never refused here, and the evictions' cost to later requests remains unmeasured
 
+## [2026-09-27 03:20] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+step 2 revision 4: the admission rule's read rate moved from 0.42 ms/row (fully resident pool, not the target) to 5.80 ms/row (cheapest streaming re-read measured), putting a 4k-row state's break-even at about seven rows; all three gates re-run green
+

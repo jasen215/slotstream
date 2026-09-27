@@ -1,16 +1,15 @@
 ---
 type: doc-snapshot
-id: 01m3ey6qcs1xj5z1e5m1yb02m5
-created: 2026-09-26T13:24:20.505284+00:00
-updated: 2026-09-27T02:38:58.252786+00:00
-summary: 'Pre-registration rev3: order 344 step 2, admission on two wins'
+id: 01m3gbnq3v46xcvysevy79zcf4
+created: 2026-09-27T02:38:57.659464+00:00
+updated: 2026-09-27T02:38:58.223816+00:00
+summary: 'Pre-registration rev4: the admission rule''s read rate recalibrated to the target configuration'
 captured_at: 2026-09-26
 dirty: 'true'
-git_head: 21a948e751f671aecdc31dd9a732a67857daa6f2
-original_path: .build/disk-prefix-tier-20260926/admission-step2-preregistration-rev3.md
-sha256: ceb4f49cfcba10589dacfbd410e691aea550fe10b985b93dd7da12bbf2996ddf
-title: 'Pre-registration rev3: order 344 step 2, admission on two wins'
-status: superseded
+git_head: 32c77288c0157a3932d0b83c727e3cd5c680447e
+original_path: .build/disk-prefix-tier-20260926/admission-step2-preregistration-rev4.md
+sha256: 94dcf6fe27bf87868dc2707fd9be276271038b64c5f681870ef5b8beaaaaf65c
+title: 'Pre-registration rev4: the admission rule''s read rate recalibrated to the target configuration'
 ---
 # Pre-registration: order 344 step 2, admission by pass count
 
@@ -105,3 +104,27 @@ A recorded run in which a restore that removes a pass loses more to evictions th
 pass it saved, or a run in which the rule skips a state whose restore would have removed a
 pass under the request's actual chunking. Both are visible in the reported counts, and
 either one sends the rule back to the plan rather than to a constant.
+
+## Revision 4, 2026-09-26, after step 4's measurement
+
+Step 4 measured what this engine actually pays to read
+([[sources/runs/2026/09/2026-09-26-disk-prefix-step4-paired-ab]]): arm A's post-restart turn
+restores 3584 rows in 0.035 to 0.037 s and then reads 265 rows for 20.5 s, while arm B reads the same
+3849-row prompt cold in 70.7 to 73.1 s. That is about 77 ms per row on the first pass after a restart
+and 18.5 ms amortized over the whole read.
+
+The second term of revision 3 credited a saving at 0.42 ms per row — 3921 rows in 1.64 s on a *fully
+resident* pool, which is the one configuration this engine does not target. It is an estimator
+returning a value from outside the range it measured, in the direction that costs: at a 0.42 ms rate a
+restore of a 4k-row state needs about 90 saved rows to pay, so revision 3 declines savings of 8 to 90
+rows that the target configuration would pay for several times over (64 rows cost 1.2 s at the
+measured 18.5 ms per row against a 0.038 s restore).
+
+Revision 4 credits a saving at **5.80 ms per row** — 3660 rows in 21.22 s, the cheapest re-read
+measured in a configuration where the model did not fit in memory
+([[records/measurements/disk-tier-cost-arms-2026-09-26]]). The break-even for a 4k-row state becomes
+about 7 rows, so the term now declines only a state that is effectively the length memory already
+holds, which is the case it exists for, while still covering a tail-aware schedule where the pass term
+collapses. The resting rule is unchanged: whatever the rate, the rule may only ever decline a restore,
+and every decline is recorded with its reason.
+

@@ -2,7 +2,7 @@
 type: plan
 id: 01m3ecpsw8ezyhykv7ts5qcq22
 created: 2026-09-26T08:18:32.968493+00:00
-updated: 2026-09-27T02:38:45.536344+00:00
+updated: 2026-09-27T03:20:42.790394+00:00
 summary: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 date: 2026-09-26
 doc: plan
@@ -116,6 +116,16 @@ not justify its bandwidth cost.
    turn 3 of the first server saved 512 rows, restored in 0.0932 s against the fitted 0.0385 s, and
    evicted two conversations to do it, which is the co-primary now recorded beside every restore.
    Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-step2-admission]].
+
+   **Revision 4, 2026-09-26, after step 4 measured what reading actually costs.** The second term's
+   rate was 0.42 ms per row, measured on a pool holding the whole model, which is not this engine's
+   target; at that rate a 4k-row restore needed about 90 saved rows, so the rule declined savings of 8
+   to 90 rows that the target pays for several times over — 64 rows cost about 1.2 s there against a
+   0.038 s restore. It now credits the cheapest re-read measured where the model did not fit, 5.80 ms
+   per row, which puts a 4k-row state's break-even at about seven rows and leaves the rule declining
+   only a state that is effectively the length memory already holds. Its gates were re-run and are
+   green: T0 policy PASS with 132 assertions, the equivalence gate `passed: true`, and the e2e suite 12
+   of 12. Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-admission-recalibration]].
 3. Queued preload, bounded. Start the disk read while an accepted request waits for its guards or is
    queued, inside the existing staging and reservation accounting, cancelled and drained on failure or
    cancellation, with no reader pinned past the request's ownership. Exit: process footprint at the

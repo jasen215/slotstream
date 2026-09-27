@@ -129,21 +129,26 @@ package struct PersistentPrefixReuse: Equatable, Sendable {
 /// Whether a persisted state is worth reading, decided from the schedule and
 /// the fitted restore cost. A restore is cheap and flat — `0.0213 + 3.946e-06 *
 /// rows` seconds over every state measured (n=9, r2=0.954) — while reading is
-/// not: 25 rows cost 1.07 to 1.79 s against 3.6k rows at 21 to 52 s, so a
-/// removed pass is worth about a second and the cheapest row ever read cost
-/// 0.42 ms on a fully resident pool. Two wins are therefore real and either one
+/// not: the first pass after a restart measured 77 ms per row and a whole cold
+/// read 18.5 ms, so the cheapest re-read this engine's target configuration has
+/// ever produced is 5.8 ms per row. Two wins are therefore real and either one
 /// takes the disk: the saving removes a scheduled pass of reading, or the saved
-/// rows pay for the restore even at that cheapest measured re-read cost.
-/// ([records/measurements/disk-tier-cost-arms-2026-09-26], pre-registration rev
-/// 3 of order 344 step 2.)
+/// rows pay for the restore even at that cheapest target-configuration rate.
+/// ([records/measurements/disk-tier-cost-arms-2026-09-26],
+/// [[sources/runs/2026/09/2026-09-26-disk-prefix-step4-paired-ab]], and
+/// pre-registration revision 4 of order 344 step 2.)
 package enum PersistentPrefixAdmission {
     /// `restoreSeconds = 0.0213 + 3.946e-06 * restored tokens`, n=9, r2=0.954.
     static let restoreFixedSeconds = 0.0213
     static let restoreSecondsPerRow = 3.946e-06
-    /// The cheapest re-read any measurement covered: 3921 rows in 1.64 s on a
-    /// fully resident pool. Every streaming configuration measured was larger,
-    /// so crediting a saving at this rate is the conservative half of the rule.
-    static let cheapestReadSecondsPerRow = 1.64 / 3921.0
+    /// The cheapest re-read measured in a configuration where the model did not
+    /// fit in memory: 3660 rows in 21.22 s. Step 4 measured the first pass after
+    /// a restart at 77 ms per row and a whole cold read at 18.5 ms, so crediting
+    /// a saving at this rate never declines one the target would have paid for.
+    /// A fully resident pool reads at 0.42 ms per row (3921 rows in 1.64 s);
+    /// that configuration is not this engine's target and using it made the rule
+    /// decline profitable restores, which is why it was replaced.
+    static let cheapestReadSecondsPerRow = 21.22 / 3660.0
     /// A bound against a schedule that cannot terminate, not a policy value.
     static let maximumPasses = 1 << 14
 
