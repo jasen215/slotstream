@@ -2,11 +2,13 @@
 type: index
 scope: type-folder
 folder: records/claims
-updated: 2026-09-23T17:54:18.617026Z
+updated: 2026-09-27T04:27:15.420668Z
 ---
 
 # records/claims
 
+- [[records/claims/disk-prefix-tier-restart-is-3-4x-to-3-7x]] — A restarted server resumes a long prompt 3.4x to 3.7x faster with the disk tier
+- [[records/claims/disk-prefix-tier-resumes-faster-than-rereading]] — The disk prefix tier resumes a restart 1.5x to 1.6x faster than re-reading the prompt
 - [[records/claims/sevra-mac-folders-2000-files]] — Sevra reads folders of up to 2,000 files
 - [[records/claims/release-2k-prose-current-timing]] — Installed-release prose first-read range and ordinary exact-repeat latency at the measured small-budget profile.
 - [[records/claims/release-2k-code-current-timing]] — Installed-release code first-read range and ordinary exact-repeat latency at the measured small-budget profile.

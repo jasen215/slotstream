@@ -2190,3 +2190,6 @@ step 2 revision 4: the admission rule's read rate moved from 0.42 ms/row (fully 
 ## [2026-09-27 04:10] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 co-primary closed: the restore-driven eviction's marginal cost is not isolable in this workload (both arms lose the sibling state at the trigger), but the tier's recovery of that sibling is 5.19x and the per-round net is +202 s in the tier's favour, 3 of 3; ids identical for all five turns
 
+## [2026-09-27 04:39] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+step 5 done: both defaults kept (serve opt-in, launch on at 20 GB) and the measured value published in README, docs/CLI.md and docs/ENGINEERING.md with two claims records; step 3 (queued preload) deliberately not planned
+

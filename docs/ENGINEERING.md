@@ -16,6 +16,7 @@ for Slotstream. For installation and a first reply, start with
 | Download internals | [Slotpack format](DOWNLOAD-FORMAT.md) |
 | Expert lookahead | [How it works, experiments and results](EXPERT-LOOKAHEAD.md) |
 | Design and evidence | [Design and plan](../PLAN.md), [Measurements](../MEASUREMENTS.md), [Hardware reports](HARDWARE.md) |
+| Unmeasured open question | [Memory-limited session against auto](MEASURE-MEMORY-HEADROOM-AB.md) |
 | Security and releases | [Security](../SECURITY.md), [Changelog](../CHANGELOG.md), [Latest release](https://github.com/carloslfu/slotstream/releases/latest) |
 
 The public [db.md store](../db/DB.md) holds the measurements, claims, plans,
@@ -163,6 +164,46 @@ and the experiments that led to it.
 
 [MEASUREMENTS.md](../MEASUREMENTS.md) includes the configurations, comparisons,
 and failed experiments behind these results.
+
+### The disk prefix tier
+
+`serve --prefix-cache-dir` writes a committed conversation state after each
+reply and restores it instead of re-reading the prompt, after a restart or when
+a conversation is longer than memory retains (`slotstream launch` starts its
+server with that directory; plain `serve` leaves it off). A paired A/B against
+a no-disk arm, three interleaved rounds and twelve matched turns on a 32 GB
+Air at a 10 GB target, measured **1.5x to 1.6x faster than re-reading** the
+prompt on first-token seconds and **3.4x to 3.7x faster after a restart**, with
+prompt and output ids identical in every pair.
+
+What it buys is skipping the cold start: the post-restart turn restored 3584
+rows in 0.035-0.037 s and read a 265-row residual in 20.5 s, against 70.7-73.1 s
+to read the same 3849-row prompt cold — about 77 ms per row on the first pass
+and 18.5 ms amortized, which is also why a plain per-token cost model of
+reading does not fit (n=19, r2=0.012). Follow-up wins come from pass
+boundaries: memory held 3840 rows and the disk 4352, so the recompute arm's
+1439-row residual cost two prefill passes where the tier's 927-row residual
+cost one.
+
+A restore is cheap and flat — `0.0213 + 3.946e-06 x rows` seconds, n=9,
+r2=0.954 — but it makes room by evicting in-memory states, and every request
+reports how many (`evictionsForRestore`). In the follow-up experiment a restore
+evicted two conversations and the tier restored the evicted sibling's own state
+in 0.11 s where a rebuild reads the whole prompt; the per-round net of the
+restore's win against that later turn was +202 s in the tier's favour, 3 of 3
+rounds. The isolated marginal cost of a restore-driven eviction was not
+isolable in that workload, since the sibling's state left both arms. There is a
+small presence cost: on a control turn where the tier neither restored nor was
+offered anything longer it read 0.970 (n=3, suggestive only).
+
+The tier reads every longer state its boundary and resume rules allow; there is
+no admission threshold, because those rules leave no candidate that would not
+pay (see
+[the measurement](../db/records/measurements/disk-prefix-admission-is-unreachable-2026-09-26.md)).
+Limits: one machine and one internal SSD, one prompt shape, `--memory-gb 10`,
+no images and no speculation interaction, and a three-round bootstrap. The
+[measurement record](../db/records/measurements/disk-prefix-tier-value-2026-09-26.md)
+has the method, the warm-up correction and what was not measured.
 
 ## Context
 

@@ -6724,6 +6724,23 @@ not justify its bandwidth cost.
    not a claim. Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-eviction-cost]].
 5. Changing a default, the docs and any public number are a separate decision after step 4.
 
+   **Outcome, 2026-09-26: both defaults kept, the value published.** `serve` keeps
+   `--prefix-cache-dir` off unless it is asked for and `slotstream launch` keeps starting its server
+   with it at the 20 GB quota; [[records/decisions/disk-prefix-tier-stays-opt-in-for-serve]] records
+   why. The tier writes model state into a directory and its files are invalidated by a rebuild, so
+   turning it on for every `serve` would spend disk the user did not choose on speed they did not ask
+   for, while `launch` is the case where the directory is the product's own choice and not re-reading
+   an agent's instructions after a restart is the point. The measured numbers now sit where the feature
+   is described: README's "Starting a reply takes time" paragraph and the `--prefix-cache-dir` row in
+   [docs/CLI.md](docs/CLI.md) carry **1.5x to 1.6x faster than re-reading** and **3.4x to 3.7x faster
+   after a restart**, [docs/ENGINEERING.md](docs/ENGINEERING.md) gains a section on the mechanism, the
+   fitted restore, the eviction net and the presence-cost observation, and MEASUREMENTS.md gains
+   [[records/measurements/disk-prefix-tier-value-2026-09-26]]. Two claims records gate the needles
+   (claims gate: 317 needle checks, 0 failures) and `llms-full.txt` was regenerated in the same change.
+   Gates: `Tools/brain_gates.sh` PASS and `Tools/static_gates.sh` PASS. Step 3 (queued preload) is not
+   done and is not planned: it is the one step that adds read traffic and the placement study's
+   negative prefetch result is against it.
+
 ## Limits
 
 One machine and one internal SSD: the break-even point is a property of this disk, this model's pass

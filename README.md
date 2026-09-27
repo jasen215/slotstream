@@ -138,7 +138,9 @@ conversation history, which can take minutes for a long prompt. Follow-up
 turns reuse unchanged history, a new conversation reuses the system prompt
 earlier ones started with, and `serve --prefix-cache-dir` keeps long
 conversations and shared system prompts on disk so that they survive a
-restart. The hardware guide
+restart: resuming from one is measured **1.5x to 1.6x faster than re-reading**
+the prompt, and **3.4x to 3.7x faster after a restart** (three paired rounds on
+one SSD; [method and limits](MEASUREMENTS.md)). The hardware guide
 has the [prompt-reading estimates](docs/HARDWARE.md#automatic-memory-plans)
 for each memory size.
 

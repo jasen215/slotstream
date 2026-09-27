@@ -1,7 +1,7 @@
 ---
 type: index
 scope: root
-updated: 2026-09-27T04:26:24.097129Z
+updated: 2026-09-27T04:39:10.347324Z
 ---
 
 # Knowledge base index
@@ -12,11 +12,11 @@ updated: 2026-09-27T04:26:24.097129Z
 - [[sources/references/index|References]] (6) — vendor documentation and prior art cited by measurements and design
 - [[sources/runs/index|Runs]] (694) — raw tool output captured before a number was transcribed
 
-## Records (433)
+## Records (437)
 - [[records/analyses/index|Analyses]] (3)
-- [[records/claims/index|Claims]] (142) — every number on a public surface, with the measurement that supports it and the gate that guards it
-- [[records/decisions/index|Decisions]] (47) — what was decided, on which evidence, and what would reverse it
+- [[records/claims/index|Claims]] (144) — every number on a public surface, with the measurement that supports it and the gate that guards it
+- [[records/decisions/index|Decisions]] (48) — what was decided, on which evidence, and what would reverse it
 - [[records/design/index|Design]] (31) — PLAN.md's design sections: goal, ground truth, byte math, architecture, correctness strategy, references
 - [[records/machines/index|Machines]] (7) — the machines measurements ran on
-- [[records/measurements/index|Measurements]] (172) — every MEASUREMENTS.md section as a record: what was measured, how, on which machine, and whether it still stands
+- [[records/measurements/index|Measurements]] (173) — every MEASUREMENTS.md section as a record: what was measured, how, on which machine, and whether it still stands
 - [[records/plan/index|Plan]] (31) — PLAN.md's operating sections: status tracker, milestones, the ordered queue, risks, done criteria, open questions

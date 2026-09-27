@@ -2,13 +2,13 @@
 type: plan
 id: 01m3ecpsw8ezyhykv7ts5qcq22
 created: 2026-09-26T08:18:32.968493+00:00
-updated: 2026-09-27T04:10:45.450228+00:00
+updated: 2026-09-27T04:39:10.347324+00:00
 summary: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 date: 2026-09-26
 doc: plan
 kind: queue-item
 level: '2'
-note: 'Steps 0, 1 and 2 done: the tier admits a longer state only when it removes a pass of reading or saves rows that pay for its own restore, evictions are recorded beside every restore, and steps 3 (queued preload) and 4 (paired A/B) remain.'
+note: 'Steps 0, 1, 2, 4 and 5 are done and step 3 is deliberately not planned: the tier is measured at 1.5x-1.6x (3.4x-3.7x after a restart), the admission rule was removed because the pass-boundary lattice makes it unreachable, the eviction co-primary is measured as a net, and the defaults, docs and claims now carry the evidence.'
 order: '344'
 title: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 status: open
@@ -178,6 +178,23 @@ not justify its bandwidth cost.
    anything longer, reads 0.970, so the tier's mere presence costs about 3% — n=3, an observation and
    not a claim. Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-eviction-cost]].
 5. Changing a default, the docs and any public number are a separate decision after step 4.
+
+   **Outcome, 2026-09-26: both defaults kept, the value published.** `serve` keeps
+   `--prefix-cache-dir` off unless it is asked for and `slotstream launch` keeps starting its server
+   with it at the 20 GB quota; [[records/decisions/disk-prefix-tier-stays-opt-in-for-serve]] records
+   why. The tier writes model state into a directory and its files are invalidated by a rebuild, so
+   turning it on for every `serve` would spend disk the user did not choose on speed they did not ask
+   for, while `launch` is the case where the directory is the product's own choice and not re-reading
+   an agent's instructions after a restart is the point. The measured numbers now sit where the feature
+   is described: README's "Starting a reply takes time" paragraph and the `--prefix-cache-dir` row in
+   [docs/CLI.md](docs/CLI.md) carry **1.5x to 1.6x faster than re-reading** and **3.4x to 3.7x faster
+   after a restart**, [docs/ENGINEERING.md](docs/ENGINEERING.md) gains a section on the mechanism, the
+   fitted restore, the eviction net and the presence-cost observation, and MEASUREMENTS.md gains
+   [[records/measurements/disk-prefix-tier-value-2026-09-26]]. Two claims records gate the needles
+   (claims gate: 317 needle checks, 0 failures) and `llms-full.txt` was regenerated in the same change.
+   Gates: `Tools/brain_gates.sh` PASS and `Tools/static_gates.sh` PASS. Step 3 (queued preload) is not
+   done and is not planned: it is the one step that adds read traffic and the placement study's
+   negative prefetch result is against it.
 
 ## Limits
 

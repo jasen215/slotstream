@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/measurements
-updated: 2026-09-27T03:23:52.697946Z
+updated: 2026-09-27T04:27:15.349311Z
 ---
 
 # records/measurements
 
+- [[records/measurements/disk-prefix-tier-value-2026-09-26]] — Paired A/B, three rounds, twelve matched turns: the tier is 1.60x on first-token seconds (1.50x without the first round's warm-up) and 3.44x to 3.72x after a restart, with identical output ids
 - [[records/measurements/disk-prefix-admission-is-unreachable-2026-09-26]] — Both the disk candidate and memory's offer must sit on the request's own prefill pass boundaries, so K to L is whole passes and the pass-count term is always true: 30 recorded turns, zero refusals
 - [[records/measurements/disk-tier-cost-arms-2026-09-26]] — A restore costs 21.3 ms plus 3.95 ms per 1000 restored tokens (n=9, r2=0.954); the re-read arm does not fit token count (n=19, r2=0.012) - its unit of cost is one 256-row pass
 - [[records/measurements/tree-verification-does-not-pay-2026-09-26]] — Chain accepts 1.5474 tokens per verify pass at x1.33; a 4-row tree 1.6368 at x1.65 and a 6-row tree 1.7237 at x1.99, so gain over cost falls from 0.752 to 0.641 and 0.559
