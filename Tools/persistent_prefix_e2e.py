@@ -195,6 +195,7 @@ def chat(port, messages, num_predict):
         "first_token_seconds": stats.get("firstTokenSeconds"),
         "request_seconds": stats.get("requestSeconds"),
         "decode_tokens": stats.get("decodeTokens"),
+        "decode_seconds": stats.get("decodeSeconds"),
         "finish_reason": stats.get("finishReason"),
         "peak_memory_gb": stats.get("peakMemoryGB"),
         "request_sampled_peak_bytes": (stats.get("sampledFootprint") or {}).get("peakBytes"),
