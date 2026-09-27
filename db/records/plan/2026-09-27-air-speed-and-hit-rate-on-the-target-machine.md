@@ -2,13 +2,13 @@
 type: plan
 id: 01m3gkvj5ng0kfanz45jydr5j7
 created: 2026-09-27T05:01:57.813011+00:00
-updated: 2026-09-27T05:16:13.683248+00:00
+updated: 2026-09-27T06:32:21.117273+00:00
 summary: Measure on the 32 GB M5 Air whether prefill reaches 100+ token/s at a 14 GB target, what decode is with MTP on, and where the agent-shaped hit rate lands; the gates are frozen in a pre-registration written before the numbers
 date: 2026-09-27
 doc: plan
 kind: queue-item
 level: '2'
-note: 'Step 0 is now rev2: rev1''s campaign halted before a model started because both named instruments refuse a target above 10 GB at argument parse. The two drivers gained an explicit --allow-large-target flag (default guard and the 10 GB ceiling unchanged, ceiling 18 GB) with the tools'' own tests passing, and the config was re-frozen at 14 GB with the headroom arithmetic corrected to the driver''s own 4.0 GB. Steps 1-2 then run on an exclusive machine.'
+note: 'Steps 1-2 are done and recorded in records/measurements/air-speed-and-hit-rate-2026-09-27: prefill is 94.88/63.80/73.90 token/s at forced passes 256/1024/2048 with the pool shrinking 1742 to 899 slots, the hit rate is 0.9850 at a ~19.5k prefix and 0.92 at ~10k, and decode is a cold-pool burst of 3.2-3.9 token/s against a 6.0 gate with the warm rate deliberately unmeasured. It stays open on purpose: publication was deferred (no user-facing surface carries these numbers), and a certified run of the 20.2x long-context restore comparison would be needed before any of them is published.'
 order: '345'
 title: 'What this machine can hold: prefill 100+, decode, and the hit rate'
 status: open
