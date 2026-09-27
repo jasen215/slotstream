@@ -408,6 +408,55 @@ Reasoning uses `delta.reasoning_content`; it is excluded from answer text.
 An inference error after streaming starts is an SSE `error` object followed
 by connection termination, without a successful finish or `[DONE]` marker.
 
+## Benchmark details
+
+Start a server with `SLOTSTREAM_BENCH_DETAILS=1` in its environment and every
+reply gains the fields the measurements are taken from, on top of the
+protocol's own `usage`:
+
+| Field | Meaning |
+|---|---|
+| `stats` | The engine's own counters for the request, described below |
+| `prompt_ids`, `output_ids` | The exact token ids read and produced, so a comparison can prove two configurations agreed |
+| `effective_prefill_chunk` | The prefill pass size this request was planned with |
+| `effective_pool_slots` | Expert cache slots the plan gave this request |
+| `effective_mtp` | Whether speculative decoding ran |
+| `optimizations` | The optimization flags in force |
+
+These fields are for measurement, not for clients to depend on: they are
+absent unless the variable is set, and their shape follows the engine's
+statistics rather than a compatibility promise.
+
+### `stats.persistentPrefix`
+
+Present only when the server was started with `--prefix-cache-dir`. It says
+what the disk tier did for this one request, and it is how a restore, its cost
+and the room it took are checked against each other. Fields are additive:
+another version's statistics may omit one, and a missing field reads as zero or
+absent rather than failing.
+
+| Field | Meaning |
+|---|---|
+| `restoredTokens` | Tokens taken from a saved state instead of being read again |
+| `restoreSeconds`, `restoreBytes` | Time and bytes that restore cost |
+| `restoreFailure` | Why a restore could not be completed, when one could not |
+| `residualPrefillTokens` | Prompt tokens still read after the restored state; the whole prompt when nothing was restored |
+| `memoryOfferedTokens` | What the in-memory cache offered this request before the disk tier was consulted; zero means memory retained nothing for this prompt |
+| `savedRows` | Rows the restored state held beyond what memory offered |
+| `evictionsForRestore` | Conversation states evicted from memory to make room for this restore |
+| `saveOutcome` | What happened when this turn was written: saved, skipped or refused, with the reason |
+| `savedTokens`, `saveSeconds`, `saveBytes` | Length, time and bytes of that write |
+| `reusedBytes` | Row bytes the written states reference in segments already on disk |
+| `removedFiles` | Saved states deleted because this conversation replaced them |
+| `sharedSaveOutcome`, `sharedSavedTokens`, `sharedSaveSeconds`, `sharedSaveBytes` | The same, for the shared prefix this prompt stored for other conversations to start from |
+
+A request that restored a saved state reports both arms of the comparison: what
+memory offered, what the disk held beyond it, and what was left to read. That is
+what makes the tier's measurements paired rather than single-request timings; the
+[engineering guide](ENGINEERING.md#the-disk-prefix-tier) explains the mechanism
+and the measured value, and [MEASUREMENTS.md](../MEASUREMENTS.md) has the
+numbers and their limits.
+
 ## Images
 
 Every API accepts images, using these request shapes:

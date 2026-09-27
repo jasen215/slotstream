@@ -2276,6 +2276,7 @@ See
 | `SLOTSTREAM_OPT_ROW_INVARIANT` | engine | `1` selects the exact mode: the model's small dense matmuls run through one kernel at every row count, and the split verify attention makes one call per row. With `SLOTSTREAM_OPT_VERIFY_SPLIT_CONTEXT=0`, speculative and plain decode give identical output for draft depths up to 4. It changes plain decode's rounding, so it is off by default. |
 | `SLOTSTREAM_DECODE_BARRIER_LAYERS` | engine | Layers between GPU drains, 1…48. The decode lookahead uses 4; `1` drains after every layer. A pass that could not keep that many layers of experts pinned drains after every layer anyway. |
 | `SLOTSTREAM_EXPERT_PREFETCH_TAP` | engine | `boundary` keeps the 0.2.16 forecast (the layer-boundary router forecast at stride 2) when the correction file is present, charging 373 MiB instead of 409; the configuration 0.2.19 was benchmarked against. Other values belong to the experimental configuration and are for comparisons only. |
+| `SLOTSTREAM_BENCH_DETAILS` | server | `1` adds the engine's own counters to every reply — `stats`, `prompt_ids`, `output_ids`, `effective_prefill_chunk`, `effective_pool_slots`, `effective_mtp` and `optimizations` — for measurement; clients should not depend on them. `stats.persistentPrefix` reports what the disk tier did for the request when `--prefix-cache-dir` is set. See [the API guide](API.md#benchmark-details). |
 | `SLOTSTREAM_ROOT_DIR` | installer | Install somewhere other than `~/.slotstream`. |
 | `SLOTSTREAM_RELEASE_BASE` | installer | Fetch the release from another base URL (CI uses it to test unpublished builds). |
 
@@ -2816,6 +2817,55 @@ complete argument string. The final choice has `finish_reason: "tool_calls"`.
 Reasoning uses `delta.reasoning_content`; it is excluded from answer text.
 An inference error after streaming starts is an SSE `error` object followed
 by connection termination, without a successful finish or `[DONE]` marker.
+
+## Benchmark details
+
+Start a server with `SLOTSTREAM_BENCH_DETAILS=1` in its environment and every
+reply gains the fields the measurements are taken from, on top of the
+protocol's own `usage`:
+
+| Field | Meaning |
+|---|---|
+| `stats` | The engine's own counters for the request, described below |
+| `prompt_ids`, `output_ids` | The exact token ids read and produced, so a comparison can prove two configurations agreed |
+| `effective_prefill_chunk` | The prefill pass size this request was planned with |
+| `effective_pool_slots` | Expert cache slots the plan gave this request |
+| `effective_mtp` | Whether speculative decoding ran |
+| `optimizations` | The optimization flags in force |
+
+These fields are for measurement, not for clients to depend on: they are
+absent unless the variable is set, and their shape follows the engine's
+statistics rather than a compatibility promise.
+
+### `stats.persistentPrefix`
+
+Present only when the server was started with `--prefix-cache-dir`. It says
+what the disk tier did for this one request, and it is how a restore, its cost
+and the room it took are checked against each other. Fields are additive:
+another version's statistics may omit one, and a missing field reads as zero or
+absent rather than failing.
+
+| Field | Meaning |
+|---|---|
+| `restoredTokens` | Tokens taken from a saved state instead of being read again |
+| `restoreSeconds`, `restoreBytes` | Time and bytes that restore cost |
+| `restoreFailure` | Why a restore could not be completed, when one could not |
+| `residualPrefillTokens` | Prompt tokens still read after the restored state; the whole prompt when nothing was restored |
+| `memoryOfferedTokens` | What the in-memory cache offered this request before the disk tier was consulted; zero means memory retained nothing for this prompt |
+| `savedRows` | Rows the restored state held beyond what memory offered |
+| `evictionsForRestore` | Conversation states evicted from memory to make room for this restore |
+| `saveOutcome` | What happened when this turn was written: saved, skipped or refused, with the reason |
+| `savedTokens`, `saveSeconds`, `saveBytes` | Length, time and bytes of that write |
+| `reusedBytes` | Row bytes the written states reference in segments already on disk |
+| `removedFiles` | Saved states deleted because this conversation replaced them |
+| `sharedSaveOutcome`, `sharedSavedTokens`, `sharedSaveSeconds`, `sharedSaveBytes` | The same, for the shared prefix this prompt stored for other conversations to start from |
+
+A request that restored a saved state reports both arms of the comparison: what
+memory offered, what the disk held beyond it, and what was left to read. That is
+what makes the tier's measurements paired rather than single-request timings; the
+[engineering guide](ENGINEERING.md#the-disk-prefix-tier) explains the mechanism
+and the measured value, and [MEASUREMENTS.md](../MEASUREMENTS.md) has the
+numbers and their limits.
 
 ## Images
 
