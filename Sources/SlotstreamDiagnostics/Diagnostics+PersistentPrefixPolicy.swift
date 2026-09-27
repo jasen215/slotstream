@@ -114,35 +114,42 @@ extension Diagnostics {
             PrefillSchedule.automaticScopeChoices(remaining: 3600, at: 0, maxChunk: 256, checkpoint: 2816)?.first,
             Array(repeating: 256, count: 11))
 
-        // Admission (order 344 step 2, pre-registration rev 4): a longer state
-        // is read only when it removes a pass of reading, or when the rows it
-        // saves pay for its own restore at the cheapest re-read measured in a
-        // configuration where the model did not fit in memory.
-        typealias Admission = PersistentPrefixAdmission
-        c.expect("a state that removes a pass of reading is taken even when it saves fewer rows than a pass",
-            Admission.takesDiskState(memoryHeld: 4000, diskHolds: 4096, prompt: 5120, chunk: 256, tailAware: false))
-        c.expect("and it is the pass count that drops, not the row count",
-            Admission.passes(from: 4096, to: 5120, chunk: 256, tailAware: false) == 4
-                && Admission.passes(from: 4000, to: 5120, chunk: 256, tailAware: false) == 5)
-        c.expect("without removing a pass, saved rows that pay for the restore still take it",
-            Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4208, prompt: 5120, chunk: 256, tailAware: false)
-                && Admission.passes(from: 4208, to: 5120, chunk: 256, tailAware: false)
-                    == Admission.passes(from: 4096, to: 5120, chunk: 256, tailAware: false))
-        c.expect("a state that saves too little and removes no pass is refused",
-            !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4100, prompt: 5120, chunk: 256, tailAware: false))
-        c.expect("a state that is not longer is refused",
-            !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 4096, prompt: 5120, chunk: 256, tailAware: false)
-                && !Admission.takesDiskState(memoryHeld: 4096, diskHolds: 3968, prompt: 5120, chunk: 256,
-                    tailAware: false))
-        c.expect("a state longer than the prompt is refused",
-            !Admission.takesDiskState(memoryHeld: 0, diskHolds: 5200, prompt: 5120, chunk: 256, tailAware: false))
-        c.expect("memory offering nothing reads a long state",
-            Admission.takesDiskState(memoryHeld: 0, diskHolds: 2048, prompt: 5120, chunk: 256, tailAware: false))
-        c.expect("a tail-aware schedule collapses the pass term and leaves the row count to decide",
-            Admission.passes(from: 4096, to: 5120, chunk: 4096, tailAware: true) == 1
-                && Admission.passes(from: 4000, to: 5120, chunk: 4096, tailAware: true) == 1
-                && Admission.takesDiskState(memoryHeld: 4000, diskHolds: 4096, prompt: 5120, chunk: 4096,
-                    tailAware: true))
+        // Order 344's admission rule was removed on 2026-09-26 because it could
+        // never refuse. `PersistentPrefixPolicy.bestMatch` accepts only a length
+        // that is one of the request's own prefill pass boundaries, and the
+        // resume rule clamps what memory offers to those same boundaries, so any
+        // pair K < L the tier can see spans a whole number of complete passes
+        // and reading from L always removes at least one. This pins that
+        // property against the engine's own boundary producer; if a schedule or
+        // resume-rule change ever breaks it, a refusal rule has to come back
+        // with its own evidence rather than be assumed away.
+        // [[records/measurements/disk-prefix-admission-is-unreachable-2026-09-26]]
+        func passes(from position: Int, to prompt: Int, chunk: Int, tailAware: Bool) -> Int {
+            var at = position, remaining = prompt - at, count = 0
+            while remaining > 0, count < 1 << 14 {
+                let n = PrefillSchedule.next(remaining: remaining, at: at, maxChunk: chunk, tailAware: tailAware)
+                guard n > 0 else { break }
+                remaining -= n
+                at += n
+                count += 1
+            }
+            return count
+        }
+        var latticePairs = 0, latticeFailures = 0
+        for prompt in [2051, 3849, 5279, 20_513, 40_001, 131_072] {
+            let ends = PrefillSchedule.resumeBoundaries(tokens: prompt, maxChunk: 256).sorted()
+            for (index, k) in ends.enumerated() {
+                for l in ends[(index + 1)...] {
+                    latticePairs += 1
+                    if passes(from: l, to: prompt, chunk: 256, tailAware: false)
+                        >= passes(from: k, to: prompt, chunk: 256, tailAware: false) {
+                        latticeFailures += 1
+                    }
+                }
+            }
+        }
+        c.expect("every pair of a prompt's own pass boundaries spans whole passes, so a longer disk state always removes one",
+            latticePairs > 100 && latticeFailures == 0)
 
         // Removal classes: other build, expired, one-off, parent, conversation.
         let classes = [entry("x", [1, 2, 3], used: now - 1), entry("y", [1, 2, 3, 4], used: now - 9, continued: true),

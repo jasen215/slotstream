@@ -126,64 +126,6 @@ package struct PersistentPrefixReuse: Equatable, Sendable {
     package var compacted = false
 }
 
-/// Whether a persisted state is worth reading, decided from the schedule and
-/// the fitted restore cost. A restore is cheap and flat — `0.0213 + 3.946e-06 *
-/// rows` seconds over every state measured (n=9, r2=0.954) — while reading is
-/// not: the first pass after a restart measured 77 ms per row and a whole cold
-/// read 18.5 ms, so the cheapest re-read this engine's target configuration has
-/// ever produced is 5.8 ms per row. Two wins are therefore real and either one
-/// takes the disk: the saving removes a scheduled pass of reading, or the saved
-/// rows pay for the restore even at that cheapest target-configuration rate.
-/// ([records/measurements/disk-tier-cost-arms-2026-09-26],
-/// [[sources/runs/2026/09/2026-09-26-disk-prefix-step4-paired-ab]], and
-/// pre-registration revision 4 of order 344 step 2.)
-package enum PersistentPrefixAdmission {
-    /// `restoreSeconds = 0.0213 + 3.946e-06 * restored tokens`, n=9, r2=0.954.
-    static let restoreFixedSeconds = 0.0213
-    static let restoreSecondsPerRow = 3.946e-06
-    /// The cheapest re-read measured in a configuration where the model did not
-    /// fit in memory: 3660 rows in 21.22 s. Step 4 measured the first pass after
-    /// a restart at 77 ms per row and a whole cold read at 18.5 ms, so crediting
-    /// a saving at this rate never declines one the target would have paid for.
-    /// A fully resident pool reads at 0.42 ms per row (3921 rows in 1.64 s);
-    /// that configuration is not this engine's target and using it made the rule
-    /// decline profitable restores, which is why it was replaced.
-    static let cheapestReadSecondsPerRow = 21.22 / 3660.0
-    /// A bound against a schedule that cannot terminate, not a policy value.
-    static let maximumPasses = 1 << 14
-
-    static func restoreSeconds(rows: Int) -> Double {
-        restoreFixedSeconds + restoreSecondsPerRow * Double(rows)
-    }
-
-    /// The prefill passes it costs to read from `position` to `prompt`, walked
-    /// with the schedule the generator uses. Under a tail-aware schedule a
-    /// residual is one pass from either resume point, so this term yields to
-    /// the other one instead of reporting a saving that is not there.
-    package static func passes(from position: Int, to prompt: Int, chunk: Int, tailAware: Bool) -> Int {
-        var at = max(0, position), remaining = prompt - at, count = 0
-        while remaining > 0, count < maximumPasses {
-            let n = PrefillSchedule.next(remaining: remaining, at: at, maxChunk: chunk, tailAware: tailAware)
-            guard n > 0 else { break }
-            remaining -= n
-            at += n
-            count += 1
-        }
-        return count
-    }
-
-    /// Take the disk state when either win is real: it removes a pass of
-    /// reading, or the rows it saves pay for its own restore at the cheapest
-    /// re-read cost ever measured.
-    package static func takesDiskState(memoryHeld: Int, diskHolds: Int, prompt: Int, chunk: Int,
-                                       tailAware: Bool) -> Bool {
-        guard diskHolds > memoryHeld, diskHolds <= prompt else { return false }
-        if passes(from: diskHolds, to: prompt, chunk: chunk, tailAware: tailAware)
-            < passes(from: memoryHeld, to: prompt, chunk: chunk, tailAware: tailAware) { return true }
-        return Double(diskHolds - memoryHeld) * cheapestReadSecondsPerRow > restoreSeconds(rows: diskHolds)
-    }
-}
-
 package enum PersistentPrefixPolicy {
     package typealias Extent = PersistentPrefixFile.Extent
     package typealias SequenceRecord = PersistentPrefixFile.SequenceRecord

@@ -39,9 +39,6 @@ public struct PersistentPrefixObservation: Codable, Equatable, Sendable {
     public var evictionsForRestore = 0
     /// Rows a candidate restore would save over what memory offered.
     public var savedRows = 0
-    /// Set when the admission rule declined a longer state, so a tier that
-    /// stops firing says why instead of looking like an ordinary miss.
-    public var skippedRestore: String?
     public init() {}
 
     /// Statistics written by 0.2.18 to 0.2.20 have no shared-prefix fields,
@@ -67,7 +64,6 @@ public struct PersistentPrefixObservation: Codable, Equatable, Sendable {
         residualPrefillTokens = try c.decodeIfPresent(Int.self, forKey: .residualPrefillTokens) ?? 0
         evictionsForRestore = try c.decodeIfPresent(Int.self, forKey: .evictionsForRestore) ?? 0
         savedRows = try c.decodeIfPresent(Int.self, forKey: .savedRows) ?? 0
-        skippedRestore = try c.decodeIfPresent(String.self, forKey: .skippedRestore)
     }
 }
 
@@ -119,19 +115,11 @@ extension Generator {
         guard let entry = tier.candidate(extending: promptIds, longerThan: retained, requireDraft: draft,
             boundaries: resume?.boundaries, prefillChunk: resume?.key.prefillChunk)
         else { return nil }
-        // A longer state is not automatically worth reading: it has to remove a
-        // pass of reading or save enough rows to pay for its own restore.
+        // A longer state is read when the tier has one: what the boundary rule
+        // and the resume rule leave as candidates are all worth their restore,
+        // and that is a property of the schedule rather than a rule here — see
+        // `Diagnostics+PersistentPrefixPolicy` for the assertion that pins it.
         observation.savedRows = max(0, entry.tokens.count - retained)
-        let chunk = resume?.key.prefillChunk ?? PrefillTuning.chunk
-        guard PersistentPrefixAdmission.takesDiskState(memoryHeld: retained, diskHolds: entry.tokens.count,
-            prompt: promptIds.count, chunk: chunk,
-            tailAware: model.optimizations.tailAwarePrefill) else {
-            observation.skippedRestore = "a \(entry.tokens.count)-row state saves \(observation.savedRows) rows,"
-                + " less than a pass and less than its own"
-                + String(format: " %.3f", PersistentPrefixAdmission.restoreSeconds(rows: entry.tokens.count))
-                + " s restore"
-            return nil
-        }
         let evictionsBefore = cache.evictions
         cache.reserveForRestore(promptTokens: promptIds.count, reserveTokens: reserveTokens,
             reserveSequenceBytes: reserveSequenceBytes, restoredSequenceBytes: entry.sequenceBytes)
