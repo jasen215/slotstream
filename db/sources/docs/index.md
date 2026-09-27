@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/docs
-updated: 2026-09-27T05:16:13.649097Z
+updated: 2026-09-27T06:01:18.788421Z
 ---
 
 # sources/docs
 
+- [[sources/docs/2026/09/2026-09-27-air-speed-decode-addendum]] — rev2's acceptance fixture answers with EOS in --raw mode, so all nine Part 1 cells decoded zero tokens and no decode rate exists; addendum A measures decode on fixtures that generate, with the gate fixed at 6.0 tok/s and the same swap rule
 - [[sources/docs/2026/09/2026-09-27-air-speed-hitrate-preregistration-rev2]] — Rev2 keeps gates G1-G4 and resolves rev1's instrument contradiction with an explicit --allow-large-target flag on the two drivers; rev1 halted before a model started, so no number exists
 - [[sources/docs/2026/09/2026-09-27-air-speed-hitrate-preregistration]] — Frozen 2026-09-27 before measurement: three pass sizes at a 14 GB target on the 32 GB M5 Air for prefill and decode, two prefix lengths for the hit rate, with the gates fixed in advance
 - [[sources/docs/2026/09/2026-09-26-eviction-cost-preregistration]] — Pre-registration: what a restore-driven eviction costs a later sibling request

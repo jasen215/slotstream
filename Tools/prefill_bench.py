@@ -3,7 +3,8 @@
 
 Repeat --arm NAME=EXECUTABLE for AB/BA order. A fresh process means empty
 expert/prefix caches, not cold SSD: OS file cache is explicitly uncontrolled.
-Failed, incomplete, and swapping runs are preserved and excluded.
+Failed, incomplete, and cells whose swap counters move by more than
+SWAP_EXCLUSION_PAGES are preserved and excluded.
 """
 import argparse
 import fcntl
@@ -22,6 +23,13 @@ import time
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "Tools/fixtures/optimization"
+# Paging is a diagnostic, not a timing gate on its own (see
+# records/decisions/global-paging-is-diagnostic): macOS swap counters cover every
+# application, so a machine with anything else running moves them a little inside
+# every cell. A cell is excluded only when the movement is large enough to be the
+# machine swapping rather than background paging; the deltas are recorded either
+# way. 4096 pages is 16 MiB, about 0.1% of a 14 GB target.
+SWAP_EXCLUSION_PAGES = 4096
 
 
 def digest(path):
@@ -313,8 +321,10 @@ def main():
                         d = json.loads((cell/"metrics.json").read_text()); validate_metrics(d)
                         if d["effective_prefill_chunk"] != effective_chunk or d["effective_mtp"] != (a.mtp == "on"): raise ValueError("effective configuration differs")
                         row["metrics"] = d
-                        if any(row["after"][k] != row["before"][k] for k in ("swapins","swapouts")):
-                            raise ValueError("swap activity during cell; timing excluded")
+                        delta = {k: row["after"][k]-row["before"][k] for k in ("swapins","swapouts")}
+                        row["swap_pages"] = delta
+                        if any(abs(v) > SWAP_EXCLUSION_PAGES for v in delta.values()):
+                            raise ValueError(f"swap activity during cell ({delta} pages); timing excluded")
                         row["valid"] = True
                     except (OSError,ValueError,KeyError,RuntimeError,subprocess.TimeoutExpired) as e: row["exclusion"] = str(e)
                     (cell/"result.json").write_text(json.dumps(row,indent=2)+"\n")

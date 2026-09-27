@@ -2196,3 +2196,6 @@ step 5 done: both defaults kept (serve opt-in, launch on at 20 GB) and the measu
 ## [2026-09-27 05:16] update | records/plan/2026-09-27-air-speed-and-hit-rate-on-the-target-machine.md
 rev2: the two bench drivers gained --allow-large-target (default guard unchanged) after rev1 was halted at argument parse before any measurement; campaign re-frozen at 14 GB, gates untouched
 
+## [2026-09-27 06:01] update | records/plan/2026-09-27-air-speed-and-hit-rate-on-the-target-machine.md
+rev2 results: prefill at 14 GB is 94.88/63.80/73.90 tok/s at forced passes 256/1024/2048 with the pool shrinking 1742->899 slots, so a bigger pass is worse here; hit rate 0.9850 at ~19.5k tokens and 0.9369/0.9208 at ~10k; decode unmeasured because the acceptance fixture answers EOS in --raw mode. Addendum A re-runs decode on fixtures that generate, with the paging threshold fixed before the cells
+
