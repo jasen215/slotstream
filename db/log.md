@@ -2187,3 +2187,6 @@ step 4 done: paired A/B aggregate 1.5988 (steady state 1.5006, bootstrap lower 1
 ## [2026-09-27 03:20] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 step 2 revision 4: the admission rule's read rate moved from 0.42 ms/row (fully resident pool, not the target) to 5.80 ms/row (cheapest streaming re-read measured), putting a 4k-row state's break-even at about seven rows; all three gates re-run green
 
+## [2026-09-27 04:10] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+co-primary closed: the restore-driven eviction's marginal cost is not isolable in this workload (both arms lose the sibling state at the trigger), but the tier's recovery of that sibling is 5.19x and the per-round net is +202 s in the tier's favour, 3 of 3; ids identical for all five turns
+

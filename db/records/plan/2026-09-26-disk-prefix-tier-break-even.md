@@ -2,7 +2,7 @@
 type: plan
 id: 01m3ecpsw8ezyhykv7ts5qcq22
 created: 2026-09-26T08:18:32.968493+00:00
-updated: 2026-09-27T03:20:42.790394+00:00
+updated: 2026-09-27T04:10:45.450228+00:00
 summary: 'The disk prefix tier: a measured load-versus-recompute admission and a queued preload'
 date: 2026-09-26
 doc: plan
@@ -162,6 +162,21 @@ not justify its bandwidth cost.
    Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-step4-paired-ab]]. This measurement also
    recalibrated the admission rule's second term — the rate it used was measured on a fully resident
    pool, which is not this engine's target — and that revision is recorded on its own.
+
+   **The co-primary, 2026-09-26, measured in its own registered experiment.** A sibling conversation
+   sharing the notes head was asked before the trigger and again after it. The reading is not the one
+   the registration expected, and the deviation *is* the answer: the sibling's state left **both** arms
+   at the trigger — in arm A through the restore's two evictions, in arm B through the ordinary
+   four-state ceiling, because arm B's own save of C1 at 5120 rows evicts the same LRU conversation. So
+   the experiment measures the disk tier's **recovery** of an evicted sibling, not the eviction's
+   marginal cost: arm A restores that state in 0.11 s where arm B rebuilds 4556 rows, a 5.19x turn, and
+   the per-round net of the trigger's win against the sibling's turn is **+202 s in the tier's favour,
+   3 of 3 rounds**. The isolated marginal cost is recorded as *not isolable in this workload*, and with
+   [[records/measurements/disk-prefix-admission-is-unreachable-2026-09-26]] there is no policy lever
+   left to set from it. Two further readings: prompt and output ids are identical between arms for all
+   five turns in all three rounds; and the T3 control, where the tier neither restores nor is offered
+   anything longer, reads 0.970, so the tier's mere presence costs about 3% — n=3, an observation and
+   not a claim. Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-eviction-cost]].
 5. Changing a default, the docs and any public number are a separate decision after step 4.
 
 ## Limits
