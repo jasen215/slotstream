@@ -30,6 +30,7 @@ extension Catalogue {
             Check("machine-planning", tier: .t0) { try Diagnostics.machinePlanning() },
             Check("http-framing", tier: .t0) { Diagnostics.httpFraming() },
             Check("http-routing", tier: .t0) { Diagnostics.httpRouting() },
+            Check("failure-diagnostics", tier: .t0) { Diagnostics.failureDiagnostics() },
             Check("bounded-output", tier: .t0) { try Diagnostics.optimizationOutput() },
             Check("expert-lookahead-lane-budget", tier: .t0) { try Diagnostics.expertLookaheadLaneBudget() },
             Check("expert-lookahead-tickets", tier: .t0) { try Diagnostics.expertLookaheadTickets() },

@@ -570,7 +570,8 @@ public final class Server {
             defer {
                 heartbeat.cancel()
                 onDiagnostic?(String(format: "request %@ %@: ended after %.1f s%@", String(requestID), path,
-                    control.elapsedSeconds, control.failure.map { ", " + $0.code.rawValue } ?? ""))
+                    control.elapsedSeconds,
+                    control.failure.map { $0.diagnosticDetail(phase: control.phase) } ?? ""))
             }
             switch path {
             case "/api/chat": apiChat(fd, json, cors: cors, control: control)

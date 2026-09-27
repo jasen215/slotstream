@@ -688,7 +688,15 @@ public final class Generator {
         let reused = hit?.reused ?? 0
         if let onPrefixCacheStatus {
             let source = restored != nil ? "disk" : "memory"
+            // When disk answers, say what memory would have given: this is the
+            // quantity that chose disk (`candidate(longerThan:)`), and without
+            // it a disk tier that won once and kept winning reads as normal
+            // operation. serve.log 2026-09-24 spent its last 18 turns there.
+            let memoryOffered = restored == nil ? nil : cache?.retainedMatchLength(
+                matching: promptIds, images: images, completePromptKey: completeKey,
+                modelIdentity: model.promptCheckpointIdentity, resume: resumeRule)
             let decision = reused > 0 ? "reusing \(reused)/\(promptIds.count) tokens from \(source)"
+                + (memoryOffered.map { " (memory offered \($0))" } ?? "")
                 : "miss: " + (stats.alignedResumeRefusals > 0 ? "draft state incompatible" : cache?.lastDecision ?? "disabled")
             let disk = stats.persistentPrefix?.restoreFailure.map { "; disk restore refused: " + $0 } ?? ""
             onPrefixCacheStatus(decision + disk)

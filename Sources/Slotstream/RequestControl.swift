@@ -62,6 +62,22 @@ public struct RequestFailure: Error, CustomStringConvertible, Codable, Sendable,
     }
 }
 
+extension RequestFailure {
+    /// What a diagnostic log needs to keep a failure diagnosable after the
+    /// fact: the reason in words, the guard that refused it, and by how much.
+    /// A code alone cannot do that — on 2026-09-24 a 0.6 s refusal of an
+    /// initial state allocation and a 5.5-minute prefill killed at 87% were
+    /// both only `insufficient_memory` in serve.log.
+    public func diagnosticDetail(phase: String) -> String {
+        var detail = ", " + code.rawValue + ": " + message + " [phase " + phase + "]"
+        if let required = requiredBytes, let available = availableBytes {
+            detail += String(format: " [required %.2f GB, available %.2f GB]",
+                Double(required) / 1e9, Double(available) / 1e9)
+        }
+        return detail
+    }
+}
+
 /// Atomic admission for allocations that concurrent accepted requests have
 /// reserved but may not have materialized yet. Retained preparation stays
 /// charged until its controller is released, including time in the queue.

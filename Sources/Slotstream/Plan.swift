@@ -281,6 +281,17 @@ public struct MemoryPlan {
             format: "  prefill: %d tokens per pass (~%.0f tok/s here; costs ~%.1f GB of the target)",
             prefillChunk, Planner.estPrefillTokS(chunk: prefillChunk),
             Planner.prefillCostGB(prefillChunk)))
+        // The prefill ladder is the acceptance prompt's rate at a matched pool,
+        // and it carries no term for read bandwidth either — but unlike the
+        // decode estimate above it never said so. Ordinary prose reads slower
+        // at every size (the ladder's own note), the pass shrinks as the
+        // context grows, and a small cache streams every expert from disk.
+        l.append(
+            "          that is the acceptance prompt's rate at a matched pool, on the same SSD; "
+            + "ordinary prose reads slower, the pass shrinks as the context grows, and a small "
+            + "expert cache reads most experts from disk — a long agent prompt can come in well "
+            + "under it (docs/HARDWARE.md; the prose ratio is measured in "
+            + "db/records/measurements/what-the-sweep-does-not-settle.md)")
         if mtpEnabled {
             l.append(String(
                 format: "  mtp:    draft head on — speculative decode (%.1f GB resident, charged above)",
