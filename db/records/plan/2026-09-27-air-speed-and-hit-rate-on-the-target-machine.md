@@ -2,13 +2,13 @@
 type: plan
 id: 01m3gkvj5ng0kfanz45jydr5j7
 created: 2026-09-27T05:01:57.813011+00:00
-updated: 2026-09-27T06:32:21.117273+00:00
+updated: 2026-09-27T07:08:18.361046+00:00
 summary: Measure on the 32 GB M5 Air whether prefill reaches 100+ token/s at a 14 GB target, what decode is with MTP on, and where the agent-shaped hit rate lands; the gates are frozen in a pre-registration written before the numbers
 date: 2026-09-27
 doc: plan
 kind: queue-item
 level: '2'
-note: 'Steps 1-2 are done and recorded in records/measurements/air-speed-and-hit-rate-2026-09-27: prefill is 94.88/63.80/73.90 token/s at forced passes 256/1024/2048 with the pool shrinking 1742 to 899 slots, the hit rate is 0.9850 at a ~19.5k prefix and 0.92 at ~10k, and decode is a cold-pool burst of 3.2-3.9 token/s against a 6.0 gate with the warm rate deliberately unmeasured. It stays open on purpose: publication was deferred (no user-facing surface carries these numbers), and a certified run of the 20.2x long-context restore comparison would be needed before any of them is published.'
+note: 'Steps 1-2 are recorded in records/measurements/air-speed-and-hit-rate-2026-09-27 and the warm decode follow-up in records/measurements/warm-decode-rate-2026-09-27: prefill is 94.88/63.80/73.90 token/s at forced passes 256/1024/2048, the hit rate is 0.9850 at a ~19.5k prefix and 0.92 at ~10k, and decode is 2.4 to 3.3 token/s at a 19.5k context warm or cold, against a doctor estimate of about 7. Required follow-up before any planner number is trusted: the decode estimator carries a pool-size ladder and no context-length term, so it over-promises by roughly 2.5x for a long-context session and needs its own correction plan quoting that measurement. The plan stays open; publication was deferred and no user-facing surface carries these numbers.'
 order: '345'
 title: 'What this machine can hold: prefill 100+, decode, and the hit rate'
 status: open

@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/measurements
-updated: 2026-09-27T06:29:27.432893Z
+updated: 2026-09-27T07:08:18.324204Z
 ---
 
 # records/measurements
 
+- [[records/measurements/warm-decode-rate-2026-09-27]] — At a 14 GB target on the 32 GB Air, a 19.5k-token context decodes at 2.4 to 3.3 token/s warm or cold, so a cold pool does not explain addendum A's gap; doctor estimates about 7 at 40 of 512 experts per layer, 0.40 of the measurement
 - [[records/measurements/air-speed-and-hit-rate-2026-09-27]] — At a 14 GB target on the 32 GB M5 Air prefill is 94.88/63.80/73.90 token/s at forced passes 256/1024/2048 as the pool shrinks; the hit rate is 0.9850 at ~19.5k and 0.92 at ~10k; decode is a cold-pool burst of 3.2-3.9 token/s with the warm rate unmeasured
 - [[records/measurements/disk-prefix-tier-value-2026-09-26]] — Paired A/B, three rounds, twelve matched turns: the tier is 1.60x on first-token seconds (1.50x without the first round's warm-up) and 3.44x to 3.72x after a restart, with identical output ids
 - [[records/measurements/disk-prefix-admission-is-unreachable-2026-09-26]] — Both the disk candidate and memory's offer must sit on the request's own prefill pass boundaries, so K to L is whole passes and the pass-count term is always true: 30 recorded turns, zero refusals
