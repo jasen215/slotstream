@@ -6672,6 +6672,31 @@ not justify its bandwidth cost.
    regression above 2%. A reading that favours recomputation everywhere is a legitimate outcome: this
    record then closes by recording that the disk tier is not the lever for short prefixes, and the tier
    keeps serving only the long states it serves today.
+
+   **Outcome, 2026-09-26: met, and it measures the tier rather than the rule's refusal arm.** Paired
+   A/B over three rounds and twenty-four turns — arm A with the disk tier on a fresh directory, arm B
+   with no disk tier, the workload this store already uses. Aggregate geometric mean **1.5988** with a
+   bootstrap 2.5th percentile **1.4865**; short-follow-up family 1.3949 with nothing below 1.0009;
+   restart-long turns 3.44 to 3.72x; prompt and output ids identical in all twelve pairs. Every
+   registered exit is met and the outcome that would have closed this plan — a reading favouring
+   recomputation — did not occur.
+   Two readings matter more than the aggregate. The campaign's own warm-up inflates round 1: its
+   control reads 1.4364 where rounds 2 and 3 read 1.0012 and 0.9978 for the same turn, and arm A's own
+   cold turn was 48.09 s against 72.63 s later, so the machine changed state and stayed there; the
+   steady-state view of rounds 2 and 3 is 1.5006 with the control at 1.000, both are recorded, neither
+   is discarded. And **the admission rule never refused a candidate**, so this validates the tier, not
+   step 2's refusal: the refusal regime needs a saving that removes no pass and is negligible, which no
+   turn here produced.
+   What the tier buys, as a rate: arm A's post-restart turn restores 3584 rows in 0.035 to 0.037 s and
+   then reads 265 rows for 20.5 s, against arm B's 70.7 to 73.1 s for the same 3849-row prompt read
+   cold — about 77 ms per row on the first pass and 18.5 ms amortized, so the tier's value is skipping
+   the cold start rather than removing an average pass. The follow-up family's mechanism is a boundary:
+   memory holds 3840 rows and the disk state 4352, which straddles a prefill pass boundary.
+   Co-primary: every round evicted two conversations to admit the 4352-row state, and **nothing
+   followed those evictions**, so their cost to later requests is the one thing this step still owes.
+   Raw output: [[sources/runs/2026/09/2026-09-26-disk-prefix-step4-paired-ab]]. This measurement also
+   recalibrated the admission rule's second term — the rate it used was measured on a fully resident
+   pool, which is not this engine's target — and that revision is recorded on its own.
 5. Changing a default, the docs and any public number are a separate decision after step 4.
 
 ## Limits

@@ -2181,3 +2181,6 @@ step 1 done: the disk arm fits tightly (21.3 ms + 3.95 ms/1000 tokens, n=9, r2=0
 ## [2026-09-26 13:39] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 step 2 rewritten and done: admission on two wins (a removed pass, or saved rows that pay for the restore at the cheapest measured re-read cost), T0 policy gate 132 assertions, equivalence gate passed, e2e 12/12 after its stale accounting was corrected
 
+## [2026-09-27 02:38] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
+step 4 done: paired A/B aggregate 1.5988 (steady state 1.5006, bootstrap lower 1.4865), every registered exit met, identical ids; the disk tier wins by skipping the cold start, the admission rule never refused here, and the evictions' cost to later requests remains unmeasured
+
