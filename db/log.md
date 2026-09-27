@@ -2199,3 +2199,6 @@ rev2: the two bench drivers gained --allow-large-target (default guard unchanged
 ## [2026-09-27 06:01] update | records/plan/2026-09-27-air-speed-and-hit-rate-on-the-target-machine.md
 rev2 results: prefill at 14 GB is 94.88/63.80/73.90 tok/s at forced passes 256/1024/2048 with the pool shrinking 1742->899 slots, so a bigger pass is worse here; hit rate 0.9850 at ~19.5k tokens and 0.9369/0.9208 at ~10k; decode unmeasured because the acceptance fixture answers EOS in --raw mode. Addendum A re-runs decode on fixtures that generate, with the paging threshold fixed before the cells
 
+## [2026-09-27 06:29] update | records/plan/2026-09-27-air-speed-and-hit-rate-on-the-target-machine.md
+steps 1-2 done: prefill is 94.88/63.80/73.90 token/s at forced passes 256/1024/2048 with the pool shrinking 1742->899, the hit rate is 0.9850 at ~19.5k and 0.92 at ~10k, and decode is a cold-pool burst of 3.2-3.9 token/s (gate 6.0, not met) with the warm rate unmeasured; no number is published on a user-facing surface
+
