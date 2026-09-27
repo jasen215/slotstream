@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: sources/docs
-updated: 2026-09-27T02:38:58.252786Z
+updated: 2026-09-27T03:22:54.897969Z
 ---
 
 # sources/docs
 
+- [[sources/docs/2026/09/2026-09-26-eviction-cost-preregistration]] — Pre-registration: what a restore-driven eviction costs a later sibling request
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev3]] — Pre-registration rev3: order 344 step 2, admission on two wins
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev4]] — Pre-registration rev4: the admission rule's read rate recalibrated to the target configuration
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev2]] — Pre-registration rev2: order 344 step 2, admission by a saved pass of rows
