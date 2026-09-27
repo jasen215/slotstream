@@ -252,9 +252,13 @@ def main():
     parser.add_argument("--keep", action="store_true", help="keep state directories and logs")
     parser.add_argument("--skip-cold", action="store_true")
     parser.add_argument("--out", help="write the JSON result here")
+    parser.add_argument("--allow-large-target", action="store_true",
+                        help="lift the 10 GB ceiling to 18 GB for a measurement whose size is the "
+                             "point; the machine must have nothing else heavy running")
     args = parser.parse_args()
-    if not 8.1 <= args.memory_gb <= 10:
-        sys.exit("--memory-gb must stay within the 8.1-10 GB test range")
+    if not 8.1 <= args.memory_gb <= (18 if args.allow_large_target else 10):
+        sys.exit("--memory-gb must stay within the 8.1-10 GB test range "
+                 "(--allow-large-target lifts the ceiling to 18 GB)")
 
     work = args.work or tempfile.mkdtemp(prefix="slotstream-persistent-e2e-")
     os.makedirs(work, exist_ok=True)

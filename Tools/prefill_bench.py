@@ -208,6 +208,9 @@ def main():
     p.add_argument("--chunks", default="256")
     p.add_argument("--prompts", default="short,prose")
     p.add_argument("--memory-gb", type=float, default=8.1)
+    p.add_argument("--allow-large-target", action="store_true",
+                   help="Lift the 10 GB ceiling to 18 GB for a measurement whose size is the point; "
+                        "the machine must have nothing else heavy running (AGENTS memory safety)")
     p.add_argument("--max-tokens", type=int, default=16)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--sampled", action="store_true")
@@ -218,8 +221,10 @@ def main():
     p.add_argument("--timeout", type=int, default=1800)
     p.add_argument("--prepare-only", action="store_true")
     a = p.parse_args()
-    if not (8.1 <= a.memory_gb <= 10 and a.rounds > 0 and a.max_tokens > 0 and a.timeout > 0):
-        p.error("use an 8.1–10 GB target and positive rounds/output/timeout")
+    ceiling = 18 if a.allow_large_target else 10
+    if not (8.1 <= a.memory_gb <= ceiling and a.rounds > 0 and a.max_tokens > 0 and a.timeout > 0):
+        p.error("use an 8.1–10 GB target (--allow-large-target lifts the ceiling to 18 GB) "
+                "and positive rounds/output/timeout")
     chunks = [int(c) for c in a.chunks.split(",")]
     if any(c < 256 or c > 4096 for c in chunks): p.error("chunks must be within 256..4096")
     if len(chunks) != len(set(chunks)): p.error("chunks must be unique")

@@ -2,11 +2,12 @@
 type: index
 scope: type-folder
 folder: records/plan
-updated: 2026-09-27T04:39:10.347324Z
+updated: 2026-09-27T05:16:13.683248Z
 ---
 
 # records/plan
 
+- [[records/plan/2026-09-27-air-speed-and-hit-rate-on-the-target-machine]] — Measure on the 32 GB M5 Air whether prefill reaches 100+ token/s at a 14 GB target, what decode is with MTP on, and where the agent-shaped hit rate lands; the gates are frozen in a pre-registration written before the numbers
 - [[records/plan/2026-09-26-disk-prefix-tier-break-even]] — The disk prefix tier: a measured load-versus-recompute admission and a queued preload
 - [[records/plan/2026-09-26-tree-verification-gdn-hybrid]] — Tree verification for the GDN hybrid: accepted tokens per verify pass
 - [[records/plan/2026-09-26-pre-attention-forecast-form-and-issue-decision]] — Forecast form and the issue decision: a ranking-aware predictor and a learned confidence gate

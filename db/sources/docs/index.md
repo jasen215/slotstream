@@ -2,11 +2,13 @@
 type: index
 scope: type-folder
 folder: sources/docs
-updated: 2026-09-27T03:22:54.897969Z
+updated: 2026-09-27T05:16:13.649097Z
 ---
 
 # sources/docs
 
+- [[sources/docs/2026/09/2026-09-27-air-speed-hitrate-preregistration-rev2]] — Rev2 keeps gates G1-G4 and resolves rev1's instrument contradiction with an explicit --allow-large-target flag on the two drivers; rev1 halted before a model started, so no number exists
+- [[sources/docs/2026/09/2026-09-27-air-speed-hitrate-preregistration]] — Frozen 2026-09-27 before measurement: three pass sizes at a 14 GB target on the 32 GB M5 Air for prefill and decode, two prefix lengths for the hit rate, with the gates fixed in advance
 - [[sources/docs/2026/09/2026-09-26-eviction-cost-preregistration]] — Pre-registration: what a restore-driven eviction costs a later sibling request
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev3]] — Pre-registration rev3: order 344 step 2, admission on two wins
 - [[sources/docs/2026/09/2026-09-26-disk-prefix-admission-step2-preregistration-rev4]] — Pre-registration rev4: the admission rule's read rate recalibrated to the target configuration

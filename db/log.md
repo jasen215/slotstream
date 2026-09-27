@@ -2193,3 +2193,6 @@ co-primary closed: the restore-driven eviction's marginal cost is not isolable i
 ## [2026-09-27 04:39] update | records/plan/2026-09-26-disk-prefix-tier-break-even.md
 step 5 done: both defaults kept (serve opt-in, launch on at 20 GB) and the measured value published in README, docs/CLI.md and docs/ENGINEERING.md with two claims records; step 3 (queued preload) deliberately not planned
 
+## [2026-09-27 05:16] update | records/plan/2026-09-27-air-speed-and-hit-rate-on-the-target-machine.md
+rev2: the two bench drivers gained --allow-large-target (default guard unchanged) after rev1 was halted at argument parse before any measurement; campaign re-frozen at 14 GB, gates untouched
+
